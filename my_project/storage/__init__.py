@@ -1,7 +1,8 @@
-"""Storage module"""
+"""Storage module."""
+from __future__ import annotations
 
-from .sqlite_meta import SQLiteMetaStorage
-from .hdf5_raw import HDF5RawStorage
 from .csv_export import CSVExporter
+from .hdf5_raw import HDF5RawStorage
+from .sqlite_meta import SQLiteMetaStorage
 
-__all__ = ['SQLiteMetaStorage', 'HDF5RawStorage', 'CSVExporter']
+__all__ = ["CSVExporter", "HDF5RawStorage", "SQLiteMetaStorage"]

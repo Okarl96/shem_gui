@@ -1,15 +1,16 @@
-"""UI widgets module"""
+"""UI widgets module."""
+from __future__ import annotations
 
-from .scan_control import ScanControlWidget
-from .image_display import ImageDisplayWidget
 from .connection_panel import ConnectionPanel
-from .status_dock import StatusDockWidget
+from .image_display import ImageDisplayWidget
 from .log_dock import LogDockWidget
+from .scan_control import ScanControlWidget
+from .status_dock import StatusDockWidget
 
 __all__ = [
-    'ScanControlWidget',
-    'ImageDisplayWidget', 
-    'ConnectionPanel',
-    'StatusDockWidget',
-    'LogDockWidget'
+    "ConnectionPanel",
+    "ImageDisplayWidget",
+    "LogDockWidget",
+    "ScanControlWidget",
+    "StatusDockWidget"
 ]

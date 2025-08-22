@@ -1,1 +1,1 @@
-"""Built-in plugins"""
+"""Built-in plugins."""

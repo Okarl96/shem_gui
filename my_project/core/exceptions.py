@@ -1,26 +1,22 @@
-"""Custom exceptions"""
+"""Custom exceptions."""
+from __future__ import annotations
 
 
 class ScanningMicroscopeError(Exception):
-    """Base exception for scanning microscope"""
-    pass
+    """Base exception for scanning microscope."""
 
 
 class ConnectionError(ScanningMicroscopeError):
-    """Connection-related errors"""
-    pass
+    """Connection-related errors."""
 
 
 class ScanError(ScanningMicroscopeError):
-    """Scan-related errors"""
-    pass
+    """Scan-related errors."""
 
 
 class StorageError(ScanningMicroscopeError):
-    """Storage-related errors"""
-    pass
+    """Storage-related errors."""
 
 
 class ValidationError(ScanningMicroscopeError):
-    """Validation errors"""
-    pass
+    """Validation errors."""

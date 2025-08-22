@@ -1,6 +1,8 @@
-"""Physical constants and system limits"""
+"""Physical constants and system limits."""
 
 # Physical Limits
+from __future__ import annotations
+
 MAX_POSITION_NM = 10000000  # Maximum position in nanometers
 MIN_POSITION_NM = -10000000  # Minimum position in nanometers
 MAX_PIXELS = 2000  # Maximum pixels per axis
@@ -18,10 +20,10 @@ CURRENT_DATA_RATE = 40  # Hz (Picoammeter)
 
 # MQTT Topics
 MQTT_TOPICS = {
-    'picoammeter': "picoammeter/current",
-    'stage_position': "microscope/stage/position",
-    'stage_command': "microscope/stage/command",
-    'stage_result': "microscope/stage/result"
+    "picoammeter": "picoammeter/current",
+    "stage_position": "microscope/stage/position",
+    "stage_command": "microscope/stage/command",
+    "stage_result": "microscope/stage/result"
 }
 
 # File Formats
@@ -30,10 +32,10 @@ SUPPORTED_DATA_FORMATS = "CSV Files (*.csv);;NumPy Files (*.npy);;All Files (*)"
 
 # Colors
 STATUS_COLORS = {
-    'connected': 'green',
-    'disconnected': 'red',
-    'scanning': 'green',
-    'idle': 'black',
-    'error': 'red',
-    'warning': 'orange'
+    "connected": "green",
+    "disconnected": "red",
+    "scanning": "green",
+    "idle": "black",
+    "error": "red",
+    "warning": "orange"
 }

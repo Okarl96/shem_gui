@@ -1,7 +1,8 @@
-"""Utility modules"""
+"""Utility modules."""
+from __future__ import annotations
 
+from .formatters import DataFormatter
 from .threading import ThreadSafeBuffer
 from .validators import InputValidator
-from .formatters import DataFormatter
 
-__all__ = ['ThreadSafeBuffer', 'InputValidator', 'DataFormatter']
+__all__ = ["DataFormatter", "InputValidator", "ThreadSafeBuffer"]
