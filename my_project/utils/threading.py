@@ -12,10 +12,10 @@ class ThreadSafeBuffer:
 
     def __init__(self, maxsize: int) -> None:
         self.maxsize = maxsize
-        self.buffer = deque(maxlen=maxsize)
+        self.buffer = deque[Any](maxlen=maxsize)
         self.mutex = QMutex()
 
-    def append(self, item: Any) -> None:
+    def append(self, item: Any) -> None:  # noqa: ANN401
         """Add item to buffer."""
         with QMutexLocker(self.mutex):
             self.buffer.append(item)

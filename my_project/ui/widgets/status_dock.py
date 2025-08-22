@@ -1,7 +1,8 @@
 """Status dock widget."""
+
 from __future__ import annotations
 
-from PyQt5.QtCore import pyqtSlot
+from PyQt5.QtCore import pyqtSlot  # type: ignore library
 from PyQt5.QtWidgets import (
     QDockWidget,
     QLabel,
@@ -20,7 +21,7 @@ class StatusDockWidget(QDockWidget):
         self.setup_ui()
 
     def setup_ui(self) -> None:
-        """Setup the UI."""
+        """Sets up the UI."""  # noqa: D401
         widget = QWidget()
         layout = QVBoxLayout()
 
@@ -28,7 +29,7 @@ class StatusDockWidget(QDockWidget):
 
         self.stats_table = QTableWidget(0, 2)
         self.stats_table.setHorizontalHeaderLabels(["Parameter", "Value"])
-        self.stats_table.horizontalHeader().setStretchLastSection(True)
+        self.stats_table.horizontalHeader().setStretchLastSection(True)  # type: ignore library
         self.stats_table.setMaximumHeight(200)
 
         layout.addWidget(self.stats_table)
@@ -37,7 +38,7 @@ class StatusDockWidget(QDockWidget):
         self.setWidget(widget)
 
     @pyqtSlot(dict)
-    def update_statistics(self, stats: dict) -> None:
+    def update_statistics(self, stats: dict[str, int]) -> None:
         """Update statistics display."""
         self.stats_table.setRowCount(0)
 
