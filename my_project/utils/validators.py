@@ -1,19 +1,29 @@
 """Input validation utilities."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from config.constants import *
+from config.constants import (
+    MAX_DWELL_TIME,
+    MAX_PIXELS,
+    MAX_SCAN_SPEED,
+    MIN_DWELL_TIME,
+    MIN_PIXELS,
+    MIN_SCAN_SPEED,
+)
 
 if TYPE_CHECKING:
     from core.models import ScanParameters
+
+MAX_VALID_PORT = 65535
 
 
 class InputValidator:
     """Validate user inputs."""
 
     @staticmethod
-    def validate_scan_parameters(params: ScanParameters) -> tuple[bool, str]:
+    def validate_scan_parameters(params: ScanParameters) -> tuple[bool, str]:  # noqa: PLR0911
         """Validate scan parameters.
 
         Returns
@@ -36,10 +46,16 @@ class InputValidator:
 
         # Check timing parameters
         if params.dwell_time < MIN_DWELL_TIME or params.dwell_time > MAX_DWELL_TIME:
-            return False, f"Dwell time must be between {MIN_DWELL_TIME} and {MAX_DWELL_TIME} seconds"
+            return (
+                False,
+                f"Dwell time must be between {MIN_DWELL_TIME} and {MAX_DWELL_TIME} seconds",
+            )
 
         if params.scan_speed < MIN_SCAN_SPEED or params.scan_speed > MAX_SCAN_SPEED:
-            return False, f"Scan speed must be between {MIN_SCAN_SPEED} and {MAX_SCAN_SPEED} nm/s"
+            return (
+                False,
+                f"Scan speed must be between {MIN_SCAN_SPEED} and {MAX_SCAN_SPEED} nm/s",
+            )
 
         return True, ""
 
@@ -49,7 +65,7 @@ class InputValidator:
         if not host:
             return False, "Host cannot be empty"
 
-        if port < 1 or port > 65535:
-            return False, "Port must be between 1 and 65535"
+        if port < 1 or port > MAX_VALID_PORT:
+            return False, f"Port must be between 1 and {MAX_VALID_PORT}"
 
         return True, ""
