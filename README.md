@@ -4,11 +4,18 @@ This project aims to develop pure Python-based code to run the scanning on A-SHe
 
 You can see three folders in the project:
 
-## Simulator: 
+# 1. Simulator: 
 By its name, it is a simulation code that outputs position and signal stream in the exact format as real A-SHeM. It helps you to develop the scanning code without accidentally breaking the real instrument. It interpolates JPG images as the "sample" and mimics almost all behaviors we have met in real experiments, including moving the sample in XYZ, rotating the sample around a stated center of rotation, and applying drifts in linear axes,etc. You can find a full description below. 
 
+# 2. Old gui: 
+The single-file code that is currently used on A-SHeM. It has all the functions, from connecting to MQTT to perform scans, which now becomes too overwhelming to debug and add new functions, as the GUI is acting like a prison. 
 
-# ECC Pico Simulator
+# 3. New API:
+Here, I have already extracted core functions, which you can see in detail below. The idea is to separate the base functions like connecting to the MQTT, sending commands, generating scanning patterns, acquiring data points, and saving to some files from the frontend user interface. If completed, all functions will act as API functions that can be called by Linux/Windows/MacOS terminals or a new lightweight GUI. It will also make customized scanning easier as all functions are modularized.
+
+----------------------------------
+
+# 1 .ECC Pico Simulator
 
 A Python-based simulator for an Electron Channeling Contrast (ECC) microscope with picoammeter signal generation. Simulates stage positioning, rotation, Z-stack imaging, and signal output with X-Z compensation and 3D center of rotation support.
 
@@ -185,3 +192,362 @@ Press `Ctrl+C` to gracefully stop the simulator.
 - **Zero signal everywhere**: Check sample center positioning and FOV settings
 - **Jerky motion**: Increase `--pos-rate` for smoother movement updates
 - **Images not loading**: Verify image paths and formats (PNG, JPEG supported)
+
+# 2&3. Scanning Microscope Control System
+
+A Python-based control system for automated scanning microscopy with real-time data acquisition, visualization, and analysis. The system supports 2D raster scanning, 1D line scans, Z-series scanning, and multi-dimensional scan sequences.
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Project Structure](#project-structure)
+- [Key Features](#key-features)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Architecture](#architecture)
+- [Debugging Guide](#debugging-guide)
+- [Data Formats](#data-formats)
+
+## Overview
+
+This project provides a comprehensive scanning microscope control system that:
+- Controls stage movement via MQTT protocol
+- Acquires position and signal data in real-time
+- Supports multiple scan patterns (raster, snake, bidirectional)
+- Provides both GUI and command-line interfaces
+- Stores data in SQLite, HDF5, and CSV formats
+- Includes live visualization and post-processing tools
+
+## Project Structure
+
+```
+Old gui
+├── scanner.py                    # The Old GUI application (11,429 lines)
+│                                 # - Full-featured Qt5 interface
+│                                 # - Real-time plotting and visualization
+│                                 # - Scan configuration and execution
+│                                 # - Data export and analysis tools
+
+New API
+├── run_scan.py                   # Command-line scan execution (a test field for using terminal command to run scans)
+│                                 # - Headless scan execution
+│                                 # - 2D, 1D, and Z-series support
+│                                 # - Argument-based configuration
+│
+├── scan_controller.py            # Scan workflow orchestration (790 lines)
+│                                 # - Pattern generation integration
+│                                 # - Stage movement coordination
+│                                 # - Data acquisition callbacks
+│                                 # - Metadata management
+│
+├── series_scan_controller.py    # Multi-scan sequencing (32 KB)
+│                                 # - 2D image Z-series/R-series scanning
+|                                 # - multiZ scanning
+│                                 # - Multi-dimensional sequences
+│                                 # - Z-compensation support
+│
+├── scan_patterns.py              # Trajectory generation (21 KB)
+│                                 # - Raster patterns
+│                                 # - Snake patterns
+│                                 # - Bidirectional scanning
+│                                 # - Vertices-based polygons
+│
+├── data_storager.py              # Data persistence (20 KB)
+│                                 # - SQLite database management
+│                                 # - HDF5 raw data storage
+│                                 # - CSV export
+│                                 # - Metadata tracking
+│
+├── live_plotter.py               # Real-time visualization (11 KB)
+│                                 # - Live 2D image updates
+│                                 # - Line profile plotting
+│                                 # - Thread-safe data buffering
+│
+├── acquisition_primitives.py    # Low-level acquisition (13 KB)
+│                                 # - Stage positioning
+│                                 # - Signal measurement
+│                                 # - Movement verification
+│                                 # - Tolerance checking
+│
+├── mqtt_client.py                # MQTT communication (7 KB)
+│                                 # - Broker connection management
+│                                 # - Message publishing/subscribing
+│                                 # - Position and signal callbacks
+│
+├── command_sender.py             # Command interface (6.5 KB)
+│                                 # - High-level movement commands
+│                                 # - Stage control abstraction
+│                                 # - MQTT message formatting
+│
+├── position_signal_reader.py    # Data stream processing (13 KB)
+│                                 # - Position tracking
+│                                 # - Signal buffering
+│                                 # - History management
+│                                 # - Averaging and filtering
+│
+├── utils.py                      # Utility functions (11 KB)
+│                                 # - Z-compensation calculations
+│                                 # - Coordinate transformations
+│                                 # - Helper functions
+│
+└── __init__.py                   # Package initialization
+```
+
+## Key Features
+
+### Scan Types
+- **2D Scans**: Rectangular or polygon-based regions with configurable step sizes
+- **1D Line Scans**: Single-line profiles between two points
+- **Z-Series Scans**: Multi-layer scanning with optional XY compensation
+- **Custom Patterns**: Raster, snake, bidirectional, and user-defined trajectories
+
+### Data Acquisition
+- Real-time position monitoring via MQTT
+- Signal measurement with configurable averaging
+- Settle tolerance checking for accurate positioning
+- Continuous and step-stop scan modes
+
+### Data Storage
+- **HDF5**: Raw high-resolution scan data
+- **CSV**: Exported scan results for external analysis
+- **PNG**: Scan images with embedded metadata
+
+### Visualization
+- Live 2D image display during scanning
+- Real-time line profile plots
+- Post-scan analysis tools
+- Interactive region selection
+- Image registration and drift correction
+
+## Prerequisites
+
+### Required Software
+- Python 3.7+
+- MQTT broker (e.g., Mosquitto)
+- Qt5 libraries (for GUI)
+
+### Python Dependencies
+
+```txt
+numpy>=1.19.0
+matplotlib>=3.3.0
+PyQt5>=5.15.0
+pyqtgraph>=0.12.0
+paho-mqtt>=1.5.0
+h5py>=2.10.0
+scipy>=1.5.0
+scikit-image>=0.17.0
+sqlite3 (included in Python standard library)
+```
+
+### Optional Dependencies
+- `scipy`: Advanced interpolation and analysis (recommended)
+- `scikit-image`: Image registration features
+- `h5py`: Raw data storage in HDF5 format
+
+## Installation
+
+### 1. Clone or Download the Project
+
+```bash
+# Download the project files to your local machine
+cd /path/to/project
+```
+
+### 2. Set Up Python Environment
+
+# Install dependencies
+pip install numpy matplotlib PyQt5 pyqtgraph paho-mqtt h5py scipy scikit-image
+```
+
+## Usage
+
+### GUI Application
+
+Launch the full-featured integrated graphical interface:
+
+```bash
+python3 Old Gui/scanner.py
+```
+
+### Command-Line Interface
+
+#### 2D Rectangular Scan
+
+```bash
+python3 run_scan.py 2d \
+  --x-range -5000 5000 \
+  --y-range -5000 5000 \
+  --x-step 100 \
+  --y-step 100 \
+  --z-setpoint 1000 \
+  --r-setpoint 45000 \
+  --output ./data/scan_output.db
+```
+
+#### 2D Polygon Scan (Vertices)
+
+```bash
+python3 run_scan.py 2d \
+  --vertices "(-500,0)" "(500,0)" "(0,866)" \
+  --x-step 50 \
+  --y-step 50 \
+  --z-setpoint 1000 \
+  --output ./data/triangle_scan.db
+```
+
+#### 1D Line Scan
+
+```bash
+python3 run_scan.py 1d \
+  --start -1000 -1000 \
+  --end 1000 1000 \
+  --step 10 \
+  --z-setpoint 1000 \
+  --output ./data/line_scan.db
+```
+
+#### Z-Series 2D Scan
+
+```bash
+python3 run_scan.py z-series \
+  --x-range -2000 2000 \
+  --y-range -2000 2000 \
+  --x-step 100 \
+  --y-step 100 \
+  --z-start 0 \
+  --z-end 5000 \
+  --z-steps 50 \
+  --output ./data/z_series.db
+```
+
+### Common Options
+
+```bash
+--mqtt-host HOSTNAME      # MQTT broker hostname (default: localhost)
+--mqtt-port PORT          # MQTT broker port (default: 1883)
+--settle-tol TOLERANCE    # Position settle tolerance in nm (default: 5.0)
+--settle-time SECONDS     # Time to wait for settling (default: 0.5)
+--avg-count N             # Signal averaging count (default: 10)
+--output PATH             # Output database file path
+```
+
+## Architecture
+
+### Communication Flow
+
+```
+MQTT Broker
+    ↕
+mqtt_client.py (Connection Management)
+    ↕
+position_signal_reader.py (Data Stream Processing)
+    ↕
+scan_controller.py (Orchestration)
+    ↕
+acquisition_primitives.py (Low-level Control)
+    ↕
+command_sender.py (Command Interface)
+    ↕
+data_storager.py (Persistence)
+```
+
+### Key Components
+
+#### 1. MQTT Client (`mqtt_client.py`)
+- Manages connection to MQTT broker
+- Subscribes to position and signal topics
+- Publishes movement commands
+- Provides callback mechanism for data updates
+
+#### 2. Position Signal Reader (`position_signal_reader.py`)
+- Processes incoming MQTT position messages
+- Buffers signal data for averaging
+- Maintains position history
+- Thread-safe data access
+
+#### 3. Command Sender (`command_sender.py`)
+- High-level interface for stage control
+- Abstracts MQTT message formatting
+- Supports absolute and relative movements
+- Handles multi-axis commands
+
+#### 4. Acquisition Primitives (`acquisition_primitives.py`)
+- `move_and_settle()`: Move to position and verify arrival
+- `read_position_once()`: Single position measurement
+- `read_signal_averaged()`: Averaged signal acquisition
+- Implements tolerance checking and timeout handling
+
+#### 5. Scan Controller (`scan_controller.py`)
+- Orchestrates entire scan workflow
+- Generates scan patterns
+- Executes movement and acquisition sequences
+- Provides progress callbacks
+- Manages metadata and results
+
+#### 6. Data Storager (`data_storager.py`)
+- Creates and manages SQLite databases
+- Stores scan configurations and results
+- Exports to CSV and HDF5 formats
+- Generates unique scan IDs
+
+#### 7. Scan Patterns (`scan_patterns.py`)
+- `generate_raster_2d()`: Standard raster pattern
+- `generate_snake_2d()`: Snake/serpentine pattern
+- `generate_bidirectional_1d()`: Back-and-forth line scan
+- `generate_vertices_based_pattern()`: Polygon filling
+- `generate_z_series_pattern()`: Multi-layer 3D scans
+
+### Data Flow
+
+1. **Configuration**: User sets scan parameters via GUI or CLI
+2. **Pattern Generation**: Scan trajectory is calculated
+3. **MQTT Connection**: System connects to broker and subscribes to topics
+4. **Scan Execution**: 
+   - Move to each point in pattern
+   - Wait for settling
+   - Acquire signal
+   - Store data
+5. **Data Storage**: Results saved to SQLite/HDF5/CSV
+6. **Visualization**: Real-time or post-scan plotting
+
+## Data Formats
+
+**scan_data table:**
+```sql
+CREATE TABLE scan_data (
+    scan_id TEXT,
+    point_index INTEGER,
+    x_nm REAL,
+    y_nm REAL,
+    z_nm REAL,
+    signal REAL,
+    FOREIGN KEY (scan_id) REFERENCES scans(scan_id)
+);
+```
+
+### HDF5 Structure
+
+```
+scan_<id>.h5
+├── metadata (attributes)
+│   ├── scan_type
+│   ├── timestamp
+│   ├── x_range_nm
+│   ├── y_range_nm
+│   └── ...
+├── positions (dataset, shape: [N, 3])
+│   └── columns: [X, Y, Z]
+└── signals (dataset, shape: [N])
+```
+
+### CSV Export Format
+
+```csv
+scan_id,point_index,x_nm,y_nm,z_nm,signal,timestamp
+scan_001,0,0.0,0.0,1000.0,123.45,2025-01-15T10:30:00
+scan_001,1,100.0,0.0,1000.0,124.56,2025-01-15T10:30:01
+...
+```
+
