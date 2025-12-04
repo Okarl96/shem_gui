@@ -43,11 +43,8 @@ python ecc_pico_simulator.py --images img_z0.png img_z250.png img_z500.png img_z
 
 ## Command Line Arguments
 
-### Required Arguments
-- `--images IMAGE [IMAGE ...]` - Image file paths (PNG, JPEG, etc.)
-- `--broker HOST` - MQTT broker address
-
 ### Image Configuration
+- `--images IMAGE [IMAGE ...]` - Image file paths (PNG, JPEG, etc.)
 - `--z-positions Z [Z ...]` - Z position for each image in nm (default: auto-spaced by 250nm)
 - `--fov-x FOV_X` - Field of view width in nm (default: image width in pixels)
 - `--fov-y FOV_Y` - Field of view height in nm (default: image height in pixels)
@@ -72,6 +69,7 @@ python ecc_pico_simulator.py --images img_z0.png img_z250.png img_z500.png img_z
 - `--offset-pa OFFSET` - Signal offset in pA (default: 100)
 
 ### Communication
+- `--broker HOST` - MQTT broker address
 - `--port PORT` - MQTT broker port (default: 1883)
 - `--pos-rate HZ` - Position broadcast rate in Hz (default: 100)
 - `--sig-rate HZ` - Signal broadcast rate in Hz (default: 100)
