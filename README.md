@@ -131,7 +131,7 @@ mosquitto_pub -h localhost -t microscope/stage/command -m "SET_RATE/2000"
 mosquitto_pub -h localhost -t microscope/stage/command -m "STATUS"
 ```
 
-## Stopping the Simulator
+**Stopping the Simulator**
 
 Press `Ctrl+C` to gracefully stop the simulator.
 
