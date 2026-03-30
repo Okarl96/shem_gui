@@ -238,118 +238,82 @@ python scanner.py
 ```
 
 Upon successful running, you will see:
-<img width="1920" height="1040" alt="image" src="https://github.com/user-attachments/assets/a73cf228-2bbd-42ff-9615-16067821dc03" />
+<img width="1920" height="1037" alt="image" src="https://github.com/user-attachments/assets/aeed642d-4333-4149-81df-109e4a991d91" />
+
+## Usage ##
+
+**Region 1:** The connection and storage setting, you can simply click `Connect` to start the connection to the MQTT client if using the default setting. The `Path` is the file saving path, and the `Detector Lag` is used in the real microscope to compensate the detetcor sensitivity which is usually 0.35 seconds. Upon successful connection, all N/A numbers in ***Region 3*** will become the current live reading of positions and signal like this:
+<img width="549" height="159" alt="image" src="https://github.com/user-attachments/assets/3d4c68c7-fb72-4dd0-990c-10ca380c934c" />
+
+and the status on the bottom right will also become:
+
+<img width="114" height="25" alt="image" src="https://github.com/user-attachments/assets/fefb01c3-d3d8-421d-b60f-286bb281a987" />
 
 
+**Region 2:** The most important parameter setting area. There are three tabs: `Manual Control`, `2D control`, and `1D control`. 
 
-## Key Features
+The `Manual Control` is used to run the axes manually to a designated position, we usually use it to test the connetion and bring the sample to a optically good region for the initial scan. The big read `STOP` buttom is used to force stop all movement, which is been tested. You can test it by: first simply assign a large number to any axe and see updates on the positions in ***Region 3*** or in the MQTT client if you have manually subscribed to it; then click `STOP`, which will stop all movements. 
 
-### Scan Types
-- **2D Scans**: Rectangular regions with configurable step sizes
-- **1D Line Scans**: Single-line profiles between two points
-- **Z-Series Scans**: Multi-layer scanning with optional XY compensation
-- **Custom Patterns**: Raster, snake, bidirectional, and user-defined trajectories
+The `2D control` contains all parameters needed for acquiring 2D images:
+<img width="797" height="546" alt="image" src="https://github.com/user-attachments/assets/f6cfe7c1-5cee-4928-8c4a-438ea37cd2fb" />
 
-### Data Acquisition
-- Real-time position monitoring via MQTT
-- Signal measurement with configurable averaging
-- Settle tolerance checking for accurate positioning
-- Continuous and step-stop scan modes
+- The X and Y parameters are: start position, end position, pixel number and step which is the resolution in nanometers. The pixel number and the step are linked so that as soon as you adjust one of them, the other will be calculated based on your start and end point; when the length of X or Y cannot be divided exactly by your pixel number or step, the system takes conservative choice and results in a actually smaller scanning region which will be displayed in the `Effective FOV` (Field of view) below.
+- `Mode` now only has "Step-Stop" working as we are still develop the "Continuous" mode. The "Step-Stop" is means the we move to a certain postion, dwell for the `Dwell Time` stated below, and form the pixel value based on the average signals received during the dwell window. The "Continuous" mode aims to acquire sigal continuously so that we are not wasting any signal during the scan, the `Scan Speed` is the parameter for this mode, which is under construction.
+- `Pattern` is the moving pattern choice which has "Snake" and "Raster". As picture speaks thousands of words, the movement pattern is shown in ***Region 4*** if the `Show Path Preview` is toggled on.
+- `Z-Series Parameters` is the settings for the serie scanning, which means we will have mutiple images one by one at different Z positions. The `Base Z` the Z position of a image of choice we take as the reference image, and we want to scan this area at different Z positions to see if any changes due to research purpose. The `Z start, end, numbers, and step` all follow the same logic as X and Y. The `X and Y Compensation Ratio` is due to incident beam geometry of the real microscope which is already described above in the simulator introduction.
+- `R-Series Parameters` as similar to the Z-Series, we want to examine the same area on the sample at different orientations. In `Mode`, "Simple Rotation" means we just rotate the R and keep the X and Y as the same before, which is usually used when we are doing large scale scan or crude scan; `COR Transform` needs the user to state the position of the center of rotation below. Since we are not always lucky enough to have the region of interest just on the cenetr of rotation, we need to change X and Y to scan the same area at different orientations as we are using global coordinates.
+- You can only change R or Z series parameters after toggling on the `Enable` at the top left of each series scan panel. Thers is only one series scan can be activated, the other will be force deactivated if you try to toggle both of them.
 
-### Data Storage
-- **HDF5**: Raw high-resolution scan data
-- **CSV**: Exported scan results for external analysis
-- **PNG**: Scan images with embedded metadata
+The `1D control` contains all parameters needed for acquiring line scans:
+<img width="800" height="472" alt="image" src="https://github.com/user-attachments/assets/11496d04-07db-4869-97ff-ecd2c7439311" />
 
-### Visualization
-- Live 2D image display during scanning
-- Real-time line profile plots
-- Post-scan analysis tools
-- Interactive region selection
-- Image registration and drift correction
+- The `Mode` has "Line Scan", "Z-Scan", and "R+Z Series". The "R+Z Series" is still under contruction, which aims to have R and Z series scan at the same time for acquring full diffraction pattern.
+- "Line Scan" needs the user to state a fixed axis and then state the `start, end, points, step, and Dwell time` similar as before.
+- "Z-Scan" aims to keep incident on the same spot and acquiring a line scan so that we have signal vs Z, which can be converted to signal vs angle to get the diffraction pattern. In this case, we have a point of interest from a reference image, which will be the `Fixed X and Y`, the `Base Z` is the Z position of the reference point. The other parameters are similar to the 2D Z-series scan.
 
-### Key Components
+**Region 4:** The live display area where the `2D Image` tab corresponds to `2D control`, `1D Plot` corresponds to `1D Control`, `R+Z Heatmap` corresponds to "R+Z Series" in `1D control` (under construction). Each tab is independent to each other.
 
-#### 1. MQTT Client (`mqtt_client.py`)
-- Manages connection to MQTT broker
-- Subscribes to position and signal topics
-- Publishes movement commands
-- Provides callback mechanism for data updates
+**Image Process:** After either 2D or 1D scan, there will be a pop up window like this:
+<img width="998" height="728" alt="image" src="https://github.com/user-attachments/assets/709ab8c6-d210-46bf-a3d7-fb8256d15191" />
+which is mostly the matlabplot library functions.
 
-#### 2. Position Signal Reader (`position_signal_reader.py`)
-- Processes incoming MQTT position messages
-- Buffers signal data for averaging
-- Maintains position history
-- Thread-safe data access
+- Based on the image you are openning, loading a 2D image will enable `Image View` and `Metadata` tabs, a line scan will enable `Line Plot` and `Metadata`, and the `Polar View` is under consturction aimming for viewing the full diffraction pattern.
+- The `Select ROI` region of interest is for selecting a region of interest after crude scan (it is a common senario in real experiment). After drawing the ROI, the user can send the parameters of the ROI to the `2D Control` for convinence.
+- The `Overlay Mode` is made for viewing mutiple line scans in the same plot for comparision.
 
-#### 3. Command Sender (`command_sender.py`)
-- High-level interface for stage control
-- Abstracts MQTT message formatting
-- Supports absolute and relative movements
-- Handles multi-axis commands
+### Code Work Flow
 
-#### 4. Acquisition Primitives (`acquisition_primitives.py`)
-- `move_and_settle()`: Move to position and verify arrival
-- `read_position_once()`: Single position measurement
-- `read_signal_averaged()`: Averaged signal acquisition
-- Implements tolerance checking and timeout handling
-
-#### 5. Scan Controller (`scan_controller.py`)
-- Orchestrates entire scan workflow
-- Generates scan patterns
-- Executes movement and acquisition sequences
-- Provides progress callbacks
-- Manages metadata and results
-
-#### 6. Data Storager (`data_storager.py`)
-- Creates and manages SQLite databases
-- Stores scan configurations and results
-- Exports to CSV and HDF5 formats
-- Generates unique scan IDs
-
-#### 7. Scan Patterns (`scan_patterns.py`)
-- `generate_raster_2d()`: Standard raster pattern
-- `generate_snake_2d()`: Snake/serpentine pattern
-- `generate_bidirectional_1d()`: Back-and-forth line scan
-- `generate_vertices_based_pattern()`: Polygon filling
-- `generate_z_series_pattern()`: Multi-layer 3D scans
-
-### Data Flow
-
-1. **Configuration**: User sets scan parameters via GUI or CLI
-2. **Pattern Generation**: Scan trajectory is calculated
-3. **MQTT Connection**: System connects to broker and subscribes to topics
-4. **Scan Execution**: 
+1. MQTT Connection: System connects to broker and subscribes to topics
+2. Configuration: User sets scan parameters via GUI
+3. Pattern Generation: Scan trajectory is calculated
+4. Scan Execution: 
    - Move to each point in pattern
    - Wait for settling
    - Acquire signal
    - Store data
-5. **Data Storage**: Results saved to SQLite/HDF5/CSV
-6. **Visualization**: Real-time or post-scan plotting
+5. Data Storage: Results saved to PNG/HDF5/CSV
+6. Visualization: Real-time or post-scan plotting
 
-## Data Formats
+### Data Storage
+- **HDF5**: Raw scan data
+- **CSV**: Exported scan results for external analysis
+- **PNG**: Scan images for easy access
 
 ***HDF5 Structure***
 
 ```
-scan_<id>.h5
-├── metadata (attributes)
-│   ├── scan_type
-│   ├── timestamp
-│   ├── x_range_nm
-│   ├── y_range_nm
-│   └── ...
-├── positions (dataset, shape: [N, 3])
-│   └── columns: [X, Y, Z]
-└── signals (dataset, shape: [N])
+scan_id.h5
+- metadata (scan_type, timestamp, x_range_nm, y_range_nm, ...)
+- raw_data (currents,x,y,z,r,time_stamp)
+- reconstructed_image (image, x_coord, y_coord)
 ```
+where the x_coord and y_coord are the x and y positions of each pixel in the image, while the raw_data stores all datapoints before averaging into pixels.
 
 ***CSV Export Format***
 
 ```csv
-scan_id,point_index,x_nm,y_nm,z_nm,signal,timestamp
-scan_001,0,0.0,0.0,1000.0,123.45,2025-01-15T10:30:00
-scan_001,1,100.0,0.0,1000.0,124.56,2025-01-15T10:30:01
+scan_type, scan_id, timestamp, scan_parameters
+X positions, Y positions, Signal
 ...
 ```
-
+where the CSV file only stores the x and y positions of each pixel; it will be a huge file if all raw positions are stored in CSV format.
