@@ -10,7 +10,7 @@ The controlling code that is co-developed with AI models and currently been used
 
 ----------------------------------
 
-# 1 . Simulator
+# Simulator
 
 ## Features
 
