@@ -237,6 +237,11 @@ pip install numpy matplotlib PyQt5 pyqtgraph paho-mqtt h5py scipy scikit-image
 python scanner.py
 ```
 
+Upon successful running, you will see:
+<img width="1920" height="1040" alt="image" src="https://github.com/user-attachments/assets/a73cf228-2bbd-42ff-9615-16067821dc03" />
+
+
+
 ## Key Features
 
 ### Scan Types
