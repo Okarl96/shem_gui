@@ -22,8 +22,8 @@ The controlling code that is co-developed with AI models and currently been used
 The Reason for a shift in X as Z moves is due to the realistic geometry used in the real SHeM. The diffraction measurement requires a constant incidence on the same spot in different Z positions. More details refer to (https://doi.org/10.1103/PhysRevLett.131.236202).
 
 The simulator applies independent X shifts to both the sample image and the COR:
-- **Image shift**: `image_x = sample_center_x_base + (Z * x_per_z_ratio)`
-- **COR shift**: `cor_x_effective = cor_x + ((Z - cor_z) * x_per_z_ratio)`
+- Image shift: `image_x = sample_center_x_base + (Z * x_per_z_ratio)`
+- COR shift: `cor_x_effective = cor_x + ((Z - cor_z) * x_per_z_ratio)`
 
 ## Signal Generation
 
@@ -33,7 +33,7 @@ The picoammeter signal is generated based on:
 3. Rotation around the COR
 4. Out-of-bounds detection (returns 0 signal outside sample)
 
-**Formula**: `current_pA = offset_pa + gain_pa × normalized_intensity`
+Formula: `current_pA = offset_pa + gain_pa × normalized_intensity`
 
 Where `normalized_intensity` is 0.0-1.0 from the image pixel value. You can always add a noise function to the formula to mimic real situation.
 
