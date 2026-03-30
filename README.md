@@ -47,6 +47,59 @@ pip install paho-mqtt pillow numpy
 python ecc_pico_simulator.py --images img_z0.png img_z250.png img_z500.png img_z750.png img_z1000.png --z-positions 0 250 500 750 1000 --broker localhost --port 1883 --pos-rate 100 --sig-rate 100 --fov-x 1280 --fov-y 960 --speed-xy 1000 --speed-z 1000 --sample-center-x 0 --sample-center-y 0
 ```
 
+There are other command line arguments available below to simulate other situations. If you run the example usage above, you will see the outcome below in your bash: 
+
+```bash
+Loading image 1/5: img_z0.png at Z=0.0 nm
+Loading image 2/5: img_z250.png at Z=250.0 nm
+Loading image 3/5: img_z500.png at Z=500.0 nm
+Loading image 4/5: img_z750.png at Z=750.0 nm
+Loading image 5/5: img_z1000.png at Z=1000.0 nm
+Z-stack initialized: 5 images
+Z range: 0.0 to 1000.0 nm
+Sample center at Z=0: (0.0, 0.0) nm
+X-Z compensation: 1.0 nm X shift per nm Z change
+[microscope/stage/position] 1774877730842331400/0/0/0/0
+[picoammeter/current] 1774877730842561600/958.824
+
+==================================================
+ECC Z-Stack ROTATION Simulator
+with X-Z Compensation and 3D COR
+==================================================
+
+🎯 IMAGE POSITIONING (independent of COR):
+  Sample center at Z=0: (0.0, 0.0) nm
+  X-Z compensation ratio: 1.0 nm/nm
+  Sample center at Z=500: (500.0, 0.0) nm
+  Sample center at Z=1000: (1000.0, 0.0) nm
+  Sample bounds at Z=0: X=[-640.0, 640.0], Y=[-480.0, 480.0] nm
+
+🔄 3D CENTER OF ROTATION:
+  COR (at cor_z=0.0): (0.0, 0.0, 0.0) nm
+  Effective COR at Z=500: (500.0, 0.0) nm
+  Effective COR at Z=1000: (1000.0, 0.0) nm
+  Rotation speed: 45000000.0 micro-deg/s (45.0 deg/s)
+
+📊 Z-STACK:
+  Images: 5 files
+  Z-planes: [0.0, 250.0, 500.0, 750.0, 1000.0] nm
+
+⚡ SPEEDS:
+  X/Y: 1000.0 nm/s
+  Z: 1000.0 nm/s
+  R: 45.0 deg/s
+
+📡 MQTT Commands:
+  MOVE/<axis>/<value>    - Move axis (X/Y in nm, Z in nm, R in micro-deg)
+  SET_COR/<x>/<y>/<z>    - Set 3D center of rotation (nm)
+  SET_RATE/<Hz>          - Set broadcast rate
+  STATUS                 - Get system status
+
+🛑 Press Ctrl+C to stop
+
+[MQTT] Connected rc=0
+```
+
 ## Command Line Arguments
 
 ***Image Configuration***
@@ -202,90 +255,6 @@ python scanner.py
 - Interactive region selection
 - Image registration and drift correction
 
-
-
-### Command-Line Interface
-
-#### 2D Rectangular Scan
-
-```bash
-python3 run_scan.py 2d \
-  --x-range -5000 5000 \
-  --y-range -5000 5000 \
-  --x-step 100 \
-  --y-step 100 \
-  --z-setpoint 1000 \
-  --r-setpoint 45000 \
-  --output ./data/scan_output.db
-```
-
-#### 2D Polygon Scan (Vertices)
-
-```bash
-python3 run_scan.py 2d \
-  --vertices "(-500,0)" "(500,0)" "(0,866)" \
-  --x-step 50 \
-  --y-step 50 \
-  --z-setpoint 1000 \
-  --output ./data/triangle_scan.db
-```
-
-#### 1D Line Scan
-
-```bash
-python3 run_scan.py 1d \
-  --start -1000 -1000 \
-  --end 1000 1000 \
-  --step 10 \
-  --z-setpoint 1000 \
-  --output ./data/line_scan.db
-```
-
-#### Z-Series 2D Scan
-
-```bash
-python3 run_scan.py z-series \
-  --x-range -2000 2000 \
-  --y-range -2000 2000 \
-  --x-step 100 \
-  --y-step 100 \
-  --z-start 0 \
-  --z-end 5000 \
-  --z-steps 50 \
-  --output ./data/z_series.db
-```
-
-### Common Options
-
-```bash
---mqtt-host HOSTNAME      # MQTT broker hostname (default: localhost)
---mqtt-port PORT          # MQTT broker port (default: 1883)
---settle-tol TOLERANCE    # Position settle tolerance in nm (default: 5.0)
---settle-time SECONDS     # Time to wait for settling (default: 0.5)
---avg-count N             # Signal averaging count (default: 10)
---output PATH             # Output database file path
-```
-
-## Architecture
-
-### Communication Flow
-
-```
-MQTT Broker
-    ↕
-mqtt_client.py (Connection Management)
-    ↕
-position_signal_reader.py (Data Stream Processing)
-    ↕
-scan_controller.py (Orchestration)
-    ↕
-acquisition_primitives.py (Low-level Control)
-    ↕
-command_sender.py (Command Interface)
-    ↕
-data_storager.py (Persistence)
-```
-
 ### Key Components
 
 #### 1. MQTT Client (`mqtt_client.py`)
@@ -347,20 +316,7 @@ data_storager.py (Persistence)
 
 ## Data Formats
 
-**scan_data table:**
-```sql
-CREATE TABLE scan_data (
-    scan_id TEXT,
-    point_index INTEGER,
-    x_nm REAL,
-    y_nm REAL,
-    z_nm REAL,
-    signal REAL,
-    FOREIGN KEY (scan_id) REFERENCES scans(scan_id)
-);
-```
-
-### HDF5 Structure
+***HDF5 Structure***
 
 ```
 scan_<id>.h5
@@ -375,7 +331,7 @@ scan_<id>.h5
 └── signals (dataset, shape: [N])
 ```
 
-### CSV Export Format
+***CSV Export Format***
 
 ```csv
 scan_id,point_index,x_nm,y_nm,z_nm,signal,timestamp
