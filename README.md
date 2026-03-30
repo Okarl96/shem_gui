@@ -12,17 +12,31 @@ The controlling code that is co-developed with AI models and currently been used
 
 # Simulator
 
-## Features
+## Coordinate System
 
-- **Z-stack imaging**: Load multiple images at different Z positions with interpolation
-- **4-axis stage control**: X, Y, Z (nanometers), R (micro-degrees)
-- **3D Center of Rotation (COR)**: COR positioning with Z-dependent shifts
-- **X-Z compensation**: Simulates sample shift in X as Z changes
-- **Real-time signal generation**: Picoammeter current output based on sample position
-- **MQTT control**: Command and telemetry via MQTT broker
-- **Smooth motion**: Realistic stage movement with configurable speeds
+- **Stage coordinates**: Global reference frame for X, Y, Z positions
+- **Sample positioning**: Sample images shift in X based on Z position
+- **Rotation**: Sample rotates around the center of rotation (COR)
+- **X-Z compensation**: Both sample position and COR shift in X as Z changes
 
+### X-Z Compensation
 The Reason for a shift in X as Z moves is due to the realistic geometry used in the real SHeM. The diffraction measurement requires a constant incidence on the same spot in different Z positions. More details refer to (https://doi.org/10.1103/PhysRevLett.131.236202).
+
+The simulator applies independent X shifts to both the sample image and the COR:
+- **Image shift**: `image_x = sample_center_x_base + (Z * x_per_z_ratio)`
+- **COR shift**: `cor_x_effective = cor_x + ((Z - cor_z) * x_per_z_ratio)`
+
+## Signal Generation
+
+The picoammeter signal is generated based on:
+1. Current stage position (X, Y, Z, R); X, Y, Z in nanometers, R in micro-degrees.
+2. Sample image intensity at that position
+3. Rotation around the COR
+4. Out-of-bounds detection (returns 0 signal outside sample)
+
+**Formula**: `current_pA = offset_pa + gain_pa × normalized_intensity`
+
+Where `normalized_intensity` is 0.0-1.0 from the image pixel value. You can always add a noise function to the formula to mimic real situation.
 
 ## Installation
 
@@ -97,28 +111,7 @@ Format: timestamp_ns/STATUS/CATEGORY/SUBCATEGORY/RESULT/details
 
 Subscribe to: `microscope/stage/command`
 
-## Available Commands
-
-### MOVE Command
-Move a specific axis to a target position.
-
-**Format**: `MOVE/<axis>/<value>`
-
-**Examples**:
-```bash
-MOVE/X/5000        # Move X to 5000 nm
-MOVE/Y/-3000       # Move Y to -3000 nm
-MOVE/Z/750         # Move Z to 750 nm
-MOVE/R/90000000    # Move R to 90 degrees (90,000,000 micro-degrees)
-```
-
-**Axes**:
-- `X` - X position in nanometers
-- `Y` - Y position in nanometers
-- `Z` - Z position in nanometers
-- `R` - Rotation in micro-degrees (1 degree = 1,000,000 micro-degrees)
-
-## Example MQTT Commands
+## Example Commands
 
 Using `mosquitto_pub`:
 
@@ -127,45 +120,21 @@ Using `mosquitto_pub`:
 mosquitto_pub -h localhost -t microscope/stage/command -m "MOVE/X/0"
 mosquitto_pub -h localhost -t microscope/stage/command -m "MOVE/Y/0"
 
-# Rotate sample
-mosquitto_pub -h localhost -t microscope/stage/command -m "MOVE/R/45000000"
-
 # Change Z position
 mosquitto_pub -h localhost -t microscope/stage/command -m "MOVE/Z/1000"
+
+# Rotate sample
+mosquitto_pub -h localhost -t microscope/stage/command -m "MOVE/R/45000000"
 
 # Update center of rotation
 mosquitto_pub -h localhost -t microscope/stage/command -m "SET_COR/500/500/250"
 
-# Request status
-mosquitto_pub -h localhost -t microscope/stage/command -m "STATUS"
-
 # Change update rate
 mosquitto_pub -h localhost -t microscope/stage/command -m "SET_RATE/2000"
+
+# Request status
+mosquitto_pub -h localhost -t microscope/stage/command -m "STATUS"
 ```
-
-## Coordinate System
-
-- **Stage coordinates**: Global reference frame for X, Y, Z positions
-- **Sample positioning**: Sample images shift in X based on Z position
-- **Rotation**: Sample rotates around the center of rotation (COR)
-- **X-Z compensation**: Both sample position and COR shift in X as Z changes
-
-### X-Z Compensation
-The simulator applies independent X shifts to both the sample image and the COR:
-- **Image shift**: `image_x = sample_center_x_base + (Z * x_per_z_ratio)`
-- **COR shift**: `cor_x_effective = cor_x + ((Z - cor_z) * x_per_z_ratio)`
-
-## Signal Generation
-
-The picoammeter signal is generated based on:
-1. Current stage position (X, Y, Z, R)
-2. Sample image intensity at that position
-3. Rotation around the COR
-4. Out-of-bounds detection (returns 0 signal outside sample)
-
-**Formula**: `current_pA = offset_pa + gain_pa × normalized_intensity`
-
-Where `normalized_intensity` is 0.0-1.0 from the image pixel value.
 
 ## Stopping the Simulator
 
