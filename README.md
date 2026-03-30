@@ -12,12 +12,12 @@ The controlling code that is co-developed with AI models and currently been used
 
 # Simulator
 
-## Coordinate System
+**Coordinate System**
 
-- **Stage coordinates**: Global reference frame for X, Y, Z positions
-- **Sample positioning**: Sample images shift in X based on Z position
-- **Rotation**: Sample rotates around the center of rotation (COR)
-- **X-Z compensation**: Both sample position and COR shift in X as Z changes
+- Stage coordinates: Global reference frame for X, Y, Z positions
+- Sample positioning: Sample images shift in X based on Z position
+- Rotatio: Sample rotates around the center of rotation (COR)
+- X-Z compensation: Both sample position and COR shift in X as Z changes
 
 The Reason for a shift in X as Z moves is due to the realistic geometry used in the real SHeM. The diffraction measurement requires a constant incidence on the same spot in different Z positions. More details refer to (https://doi.org/10.1103/PhysRevLett.131.236202).
 
@@ -25,19 +25,19 @@ The simulator applies independent X shifts to both the sample image and the COR:
 - Image shift: `image_x = sample_center_x_base + (Z * x_per_z_ratio)`
 - COR shift: `cor_x_effective = cor_x + ((Z - cor_z) * x_per_z_ratio)`
 
-## Signal Generation
+**Signal Generation**
 
 The picoammeter signal is generated based on:
-1. Current stage position (X, Y, Z, R); X, Y, Z in nanometers, R in micro-degrees.
-2. Sample image intensity at that position
-3. Rotation around the COR
-4. Out-of-bounds detection (returns 0 signal outside sample)
+- Current stage position (X, Y, Z, R); X, Y, Z in nanometers, R in micro-degrees.
+- Sample image intensity at that position
+- Rotation around the COR
+- Out-of-bounds detection (returns 0 signal outside sample)
 
 Formula: `current_pA = offset_pa + gain_pa × normalized_intensity`
 
 Where `normalized_intensity` is 0.0-1.0 from the image pixel value. You can always add a noise function to the formula to mimic real situation.
 
-## Installation
+## Installation 
 
 ```bash
 pip install paho-mqtt pillow numpy
@@ -49,7 +49,7 @@ python ecc_pico_simulator.py --images img_z0.png img_z250.png img_z500.png img_z
 
 ## Command Line Arguments
 
-### Image Configuration
+***Image Configuration***
 - `--images IMAGE [IMAGE ...]` - Image file paths (PNG, JPEG, etc.)
 - `--z-positions Z [Z ...]` - Z position for each image in nm (default: auto-spaced by 250nm)
 - `--fov-x FOV_X` - Field of view width in nm (default: image width in pixels)
@@ -58,7 +58,7 @@ python ecc_pico_simulator.py --images img_z0.png img_z250.png img_z500.png img_z
 - `--sample-center-y Y` - Sample Y position in nm (default: 0)
 - `--x-per-z-nm RATIO` - X shift per Z change ratio (default: 1.0)
 
-### Stage Configuration
+***Stage Configuration***
 - `--speed-xy SPEED` - X/Y stage speed in nm/s (default: 2000)
 - `--speed-z SPEED` - Z stage speed in nm/s (default: 1000)
 - `--speed-r SPEED` - Rotation speed in micro-deg/s (default: 45000000)
@@ -70,11 +70,11 @@ python ecc_pico_simulator.py --images img_z0.png img_z250.png img_z500.png img_z
 - `--limit-z-min`, `--limit-z-max` - Z axis limits in nm (default: -1e12 to 1e12)
 - `--limit-r-min`, `--limit-r-max` - R axis limits in micro-deg (default: -360e6 to 360e6)
 
-### Signal Configuration
+***Signal Configuration***
 - `--gain-pa GAIN` - Signal gain in pA (default: 1000)
 - `--offset-pa OFFSET` - Signal offset in pA (default: 100)
 
-### Communication
+***Communication***
 - `--broker HOST` - MQTT broker address
 - `--port PORT` - MQTT broker port (default: 1883)
 - `--pos-rate HZ` - Position broadcast rate in Hz (default: 100)
