@@ -19,7 +19,6 @@ The controlling code that is co-developed with AI models and currently been used
 - **Rotation**: Sample rotates around the center of rotation (COR)
 - **X-Z compensation**: Both sample position and COR shift in X as Z changes
 
-### X-Z Compensation
 The Reason for a shift in X as Z moves is due to the realistic geometry used in the real SHeM. The diffraction measurement requires a constant incidence on the same spot in different Z positions. More details refer to (https://doi.org/10.1103/PhysRevLett.131.236202).
 
 The simulator applies independent X shifts to both the sample image and the COR:
@@ -43,8 +42,6 @@ Where `normalized_intensity` is 0.0-1.0 from the image pixel value. You can alwa
 ```bash
 pip install paho-mqtt pillow numpy
 ```
-
-## Frequent Usage
 
 ```bash
 python ecc_pico_simulator.py --images img_z0.png img_z250.png img_z500.png img_z750.png img_z1000.png --z-positions 0 250 500 750 1000 --broker localhost --port 1883 --pos-rate 100 --sig-rate 100 --fov-x 1280 --fov-y 960 --speed-xy 1000 --speed-z 1000 --sample-center-x 0 --sample-center-y 0
@@ -155,21 +152,11 @@ Press `Ctrl+C` to gracefully stop the simulator.
 - **Jerky motion**: Increase `--pos-rate` for smoother movement updates
 - **Images not loading**: Verify image paths and formats (PNG, JPEG supported)
 
-# 2&3. Scanning Microscope Control System
+----------------------------------
+
+# Control Script
 
 A Python-based control system for automated scanning microscopy with real-time data acquisition, visualization, and analysis. The system supports 2D raster scanning, 1D line scans, Z-series scanning, and multi-dimensional scan sequences.
-
-## Table of Contents
-
-- [Overview](#overview)
-- [Project Structure](#project-structure)
-- [Key Features](#key-features)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Architecture](#architecture)
-- [Debugging Guide](#debugging-guide)
-- [Data Formats](#data-formats)
 
 ## Overview
 
@@ -177,14 +164,24 @@ This project provides a comprehensive scanning microscope control system that:
 - Controls stage movement via MQTT protocol
 - Acquires position and signal data in real-time
 - Supports multiple scan patterns (raster, snake, bidirectional)
-- Provides both GUI and command-line interfaces
+- Provides both GUI interfaces
 - Stores data in SQLite, HDF5, and CSV formats
 - Includes live visualization and post-processing tools
+
+## Installation
+
+```bash
+pip install numpy matplotlib PyQt5 pyqtgraph paho-mqtt h5py scipy scikit-image
+```
+
+```bash
+python scanner.py
+```
 
 ## Key Features
 
 ### Scan Types
-- **2D Scans**: Rectangular or polygon-based regions with configurable step sizes
+- **2D Scans**: Rectangular regions with configurable step sizes
 - **1D Line Scans**: Single-line profiles between two points
 - **Z-Series Scans**: Multi-layer scanning with optional XY compensation
 - **Custom Patterns**: Raster, snake, bidirectional, and user-defined trajectories
@@ -207,56 +204,7 @@ This project provides a comprehensive scanning microscope control system that:
 - Interactive region selection
 - Image registration and drift correction
 
-## Prerequisites
 
-### Required Software
-- Python 3.7+
-- MQTT broker (e.g., Mosquitto)
-- Qt5 libraries (for GUI)
-
-### Python Dependencies
-
-```txt
-numpy>=1.19.0
-matplotlib>=3.3.0
-PyQt5>=5.15.0
-pyqtgraph>=0.12.0
-paho-mqtt>=1.5.0
-h5py>=2.10.0
-scipy>=1.5.0
-scikit-image>=0.17.0
-sqlite3 (included in Python standard library)
-```
-
-### Optional Dependencies
-- `scipy`: Advanced interpolation and analysis (recommended)
-- `scikit-image`: Image registration features
-- `h5py`: Raw data storage in HDF5 format
-
-## Installation
-
-### 1. Clone or Download the Project
-
-```bash
-# Download the project files to your local machine
-cd /path/to/project
-```
-
-### 2. Set Up Python Environment
-
-# Install dependencies
-pip install numpy matplotlib PyQt5 pyqtgraph paho-mqtt h5py scipy scikit-image
-```
-
-## Usage
-
-### GUI Application
-
-Launch the full-featured integrated graphical interface:
-
-```bash
-python3 Old Gui/scanner.py
-```
 
 ### Command-Line Interface
 
