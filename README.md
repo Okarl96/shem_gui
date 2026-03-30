@@ -100,6 +100,14 @@ with X-Z Compensation and 3D COR
 [MQTT] Connected rc=0
 ```
 
+Another way to check the simulator is running is to manually subscribe to the MQTT client using:
+
+```bash
+ mosquitto_sub -h localhost -p 1883 -t "microscope/stage/position"   
+```
+
+where you will see a streaming of timestamp/X/Y/Z/R, all positions will be 0 for now if you are using default settings. You can keep the subscribtion and see changes of positions if you send commands by manually post command messages or using the control script.
+
 ## Command Line Arguments
 
 ***Image Configuration***
