@@ -1,33 +1,28 @@
-# A-SHeM Controlling Development
+# Scanning Helium Microscope (SHeM) Controlling Script
 
-This project aims to develop pure Python-based code to run the scanning on A-SHeM.
-
-You can see three folders in the project:
+This repository contains a sandbox simulator for mimicing the behaviour of the nanopositioner and picoammeter in real SHeM (https://doi.org/10.1016/j.nimb.2014.06.028) and a controlling script which sends commands and acquire data with user specified parameters. There is no AI training involved in this work. The code is co-developed with commericially available AI models. 
 
 # 1. Simulator: 
-By its name, it is a simulation code that outputs position and signal stream in the exact format as real A-SHeM. It helps you to develop the scanning code without accidentally breaking the real instrument. It interpolates JPG images as the "sample" and mimics almost all behaviors we have met in real experiments, including moving the sample in XYZ, rotating the sample around a stated center of rotation, and applying drifts in linear axes,etc. You can find a full description below. 
+By its name, it is a simulation code that outputs position and signal stream in the exact format as real SHeM. It helps you to develop the scanning code without accidentally breaking the real instrument. It interpolates JPG images as the "sample" and mimics almost all behaviors we have met in real experiments, including moving the sample in XYZ, rotating the sample around a stated center of rotation, and applying drifts in linear axes,etc. You can find a full description below. 
 
-# 2. Old gui: 
-The single-file code that is currently used on A-SHeM. It has all the functions, from connecting to MQTT to perform scans, which now becomes too overwhelming to debug and add new functions, as the GUI is acting like a prison. 
-
-# 3. New API:
-Here, I have already extracted core functions, which you can see in detail below. The idea is to separate the base functions like connecting to the MQTT, sending commands, generating scanning patterns, acquiring data points, and saving to some files from the frontend user interface. If completed, all functions will act as API functions that can be called by Linux/Windows/MacOS terminals or a new lightweight GUI. It will also make customized scanning easier as all functions are modularized.
+# 2. Control Script: 
+The controlling code that is co-developed with AI models and currently been used in the real microscope to conduct experiments. It communicates with hardware through MQTT client, sends moving commands
 
 ----------------------------------
 
-# 1 .ECC Pico Simulator
-
-A Python-based simulator for an Electron Channeling Contrast (ECC) microscope with picoammeter signal generation. Simulates stage positioning, rotation, Z-stack imaging, and signal output with X-Z compensation and 3D center of rotation support.
+# 1 . Simulator
 
 ## Features
 
 - **Z-stack imaging**: Load multiple images at different Z positions with interpolation
 - **4-axis stage control**: X, Y, Z (nanometers), R (micro-degrees)
-- **3D Center of Rotation (COR)**: Dynamic COR positioning with Z-dependent shifts
-- **X-Z compensation**: Simulates image shift in X as Z changes
+- **3D Center of Rotation (COR)**: COR positioning with Z-dependent shifts
+- **X-Z compensation**: Simulates sample shift in X as Z changes
 - **Real-time signal generation**: Picoammeter current output based on sample position
 - **MQTT control**: Command and telemetry via MQTT broker
 - **Smooth motion**: Realistic stage movement with configurable speeds
+
+The Reason for a shift in X as Z moves is due to the realistic geometry used in the real SHeM. The diffraction measurement requires a constant incidence on the same spot in different Z positions. More details refer to (https://doi.org/10.1103/PhysRevLett.131.236202).
 
 ## Installation
 
@@ -78,21 +73,21 @@ python ecc_pico_simulator.py --images img_z0.png img_z250.png img_z500.png img_z
 
 ### Published Topics
 
-**Position telemetry** (QoS 0):
+**Position telemetry**:
 ```
 microscope/stage/position
 Format: timestamp_ns/X/Y/Z/R
 Example: 1699876543210000000/1000/2000/500/45000000
 ```
 
-**Signal telemetry** (QoS 0):
+**Signal telemetry**:
 ```
 picoammeter/current
 Format: timestamp_ns/current_pA
 Example: 1699876543210000000/5.237
 ```
 
-**Command results** (QoS 1):
+**Command results**:
 ```
 microscope/stage/result
 Format: timestamp_ns/STATUS/CATEGORY/SUBCATEGORY/RESULT/details
@@ -216,81 +211,6 @@ This project provides a comprehensive scanning microscope control system that:
 - Provides both GUI and command-line interfaces
 - Stores data in SQLite, HDF5, and CSV formats
 - Includes live visualization and post-processing tools
-
-## Project Structure
-
-```
-Old gui
-├── scanner.py                    # The Old GUI application (11,429 lines)
-│                                 # - Full-featured Qt5 interface
-│                                 # - Real-time plotting and visualization
-│                                 # - Scan configuration and execution
-│                                 # - Data export and analysis tools
-
-New API
-├── run_scan.py                   # Command-line scan execution (a test field for using terminal command to run scans)
-│                                 # - Headless scan execution
-│                                 # - 2D, 1D, and Z-series support
-│                                 # - Argument-based configuration
-│
-├── scan_controller.py            # Scan workflow orchestration (790 lines)
-│                                 # - Pattern generation integration
-│                                 # - Stage movement coordination
-│                                 # - Data acquisition callbacks
-│                                 # - Metadata management
-│
-├── series_scan_controller.py    # Multi-scan sequencing (32 KB)
-│                                 # - 2D image Z-series/R-series scanning
-|                                 # - multiZ scanning
-│                                 # - Multi-dimensional sequences
-│                                 # - Z-compensation support
-│
-├── scan_patterns.py              # Trajectory generation (21 KB)
-│                                 # - Raster patterns
-│                                 # - Snake patterns
-│                                 # - Bidirectional scanning
-│                                 # - Vertices-based polygons
-│
-├── data_storager.py              # Data persistence (20 KB)
-│                                 # - SQLite database management
-│                                 # - HDF5 raw data storage
-│                                 # - CSV export
-│                                 # - Metadata tracking
-│
-├── live_plotter.py               # Real-time visualization (11 KB)
-│                                 # - Live 2D image updates
-│                                 # - Line profile plotting
-│                                 # - Thread-safe data buffering
-│
-├── acquisition_primitives.py    # Low-level acquisition (13 KB)
-│                                 # - Stage positioning
-│                                 # - Signal measurement
-│                                 # - Movement verification
-│                                 # - Tolerance checking
-│
-├── mqtt_client.py                # MQTT communication (7 KB)
-│                                 # - Broker connection management
-│                                 # - Message publishing/subscribing
-│                                 # - Position and signal callbacks
-│
-├── command_sender.py             # Command interface (6.5 KB)
-│                                 # - High-level movement commands
-│                                 # - Stage control abstraction
-│                                 # - MQTT message formatting
-│
-├── position_signal_reader.py    # Data stream processing (13 KB)
-│                                 # - Position tracking
-│                                 # - Signal buffering
-│                                 # - History management
-│                                 # - Averaging and filtering
-│
-├── utils.py                      # Utility functions (11 KB)
-│                                 # - Z-compensation calculations
-│                                 # - Coordinate transformations
-│                                 # - Helper functions
-│
-└── __init__.py                   # Package initialization
-```
 
 ## Key Features
 
