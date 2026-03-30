@@ -82,9 +82,9 @@ python ecc_pico_simulator.py --images img_z0.png img_z250.png img_z500.png img_z
 
 ## MQTT Topics
 
-### Published Topics
+**Published Topics:**
 
-**Position telemetry**:
+***Position telemetry***:
 ```
 microscope/stage/position
 Format: timestamp_ns/X/Y/Z/R
@@ -104,7 +104,7 @@ microscope/stage/result
 Format: timestamp_ns/STATUS/CATEGORY/SUBCATEGORY/RESULT/details
 ```
 
-### Command Topic
+**Command Topic:**
 
 Subscribe to: `microscope/stage/command`
 
