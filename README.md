@@ -84,21 +84,21 @@ python ecc_pico_simulator.py --images img_z0.png img_z250.png img_z500.png img_z
 
 **Published Topics:**
 
-***Position telemetry***:
+Position telemetry:
 ```
 microscope/stage/position
 Format: timestamp_ns/X/Y/Z/R
 Example: 1699876543210000000/1000/2000/500/45000000
 ```
 
-**Signal telemetry**:
+Signal telemetry:
 ```
 picoammeter/current
 Format: timestamp_ns/current_pA
 Example: 1699876543210000000/5.237
 ```
 
-**Command results**:
+Command results:
 ```
 microscope/stage/result
 Format: timestamp_ns/STATUS/CATEGORY/SUBCATEGORY/RESULT/details
@@ -107,8 +107,6 @@ Format: timestamp_ns/STATUS/CATEGORY/SUBCATEGORY/RESULT/details
 **Command Topic:**
 
 Subscribe to: `microscope/stage/command`
-
-## Example Commands
 
 Using `mosquitto_pub`:
 
@@ -137,20 +135,20 @@ mosquitto_pub -h localhost -t microscope/stage/command -m "STATUS"
 
 Press `Ctrl+C` to gracefully stop the simulator.
 
-## Tips
+**Tips:**
 
-1. **Z-stack spacing**: Use `--z-positions` to specify exact Z planes for each image
-2. **FOV calibration**: Set `--fov-x` and `--fov-y` to match real image dimensions
-3. **Smooth rotation**: Adjust `--speed-r` for realistic rotation speeds
-4. **Signal calibration**: Tune `--gain-pa` and `--offset-pa` to match expected signal levels
-5. **Performance**: Reduce `--pos-rate` and `--sig-rate` if CPU usage is too high
+- Z-stack spacing: Use `--z-positions` to specify exact Z planes for each image
+- FOV calibration: Set `--fov-x` and `--fov-y` to match real image dimensions
+- Smooth rotation: Adjust `--speed-r` for realistic rotation speeds
+- Signal calibration: Tune `--gain-pa` and `--offset-pa` to match expected signal levels
+- Performance: Reduce `--pos-rate` and `--sig-rate` if CPU usage is too high
 
-## Troubleshooting
+**Troubleshooting:**
 
-- **No MQTT connection**: Verify broker is running and address/port are correct
-- **Zero signal everywhere**: Check sample center positioning and FOV settings
-- **Jerky motion**: Increase `--pos-rate` for smoother movement updates
-- **Images not loading**: Verify image paths and formats (PNG, JPEG supported)
+- No MQTT connection: Verify broker is running and address/port are correct
+- Zero signal everywhere: Check sample center positioning and FOV settings
+- Jerky motion: Increase `--pos-rate` for smoother movement updates
+- Images not loading: Verify image paths and formats (PNG, JPEG supported)
 
 ----------------------------------
 
