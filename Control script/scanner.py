@@ -1,4 +1,16 @@
-#!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.11,<3.12"
+# dependencies = [
+#     "numpy==2.4.4",
+#     "scipy",
+#     "matplotlib",
+#     "PyQt5",
+#     "pyqtgraph",
+#     "paho-mqtt",
+#     "h5py",
+#     "scikit-image"
+# ]
+# ///
 import sys
 import time
 import json
@@ -23,7 +35,6 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.widgets import RectangleSelector
 
-# Try to import h5py, provide fallback if not available
 try:
     import h5py
 
@@ -74,6 +85,10 @@ pg.setConfigOptions(antialias=True, useOpenGL=True)
 pg.setConfigOptions(background='w', foreground='k')
 pg.setConfigOptions(imageAxisOrder='row-major')
 
+# ==========================================
+# 1. Hardware status and communication
+# ==========================================
+
 class ScanMode(Enum):
     STEP_STOP = "step_stop"
     CONTINUOUS = "continuous"
@@ -84,6 +99,393 @@ class ScanState(Enum):
     PAUSED = "paused"
     STOPPING = "stopping"
 
+class MQTTController(QObject):
+    """MQTT communication controller"""
+
+    # Signals
+    connected = pyqtSignal(bool)
+    position_data_received = pyqtSignal(str)  # Raw position payload
+    current_data_received = pyqtSignal(str)  # Raw current payload
+    command_result_received = pyqtSignal(str)  # Command result
+    status_update = pyqtSignal(str)
+    error_occurred = pyqtSignal(str)
+
+    def __init__(self):
+        super().__init__()
+        self.client = None
+        self.broker_host = "localhost"
+        self.broker_port = 1883
+        self.connected_status = False
+
+        # Topics
+        self.topics = {
+            'picoammeter': "picoammeter/current",
+            'stage_position': "microscope/stage/position",
+            'stage_command': "microscope/stage/command",
+            'stage_result': "microscope/stage/result"
+        }
+
+    def setup_mqtt(self, host: str, port: int):
+        """Setup MQTT client"""
+        self.broker_host = host
+        self.broker_port = port
+
+        try:
+            self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        except Exception:
+            self.client = mqtt.Client()
+        self.client.on_connect = self._on_connect
+        self.client.on_message = self._on_message
+        self.client.on_disconnect = self._on_disconnect
+
+    def _on_connect(self, client, userdata, flags, rc, properties=None):
+        """MQTT connection callback"""
+        if rc == 0:
+            self.connected_status = True
+            self.connected.emit(True)
+
+            # : Subscribe only to inbound topics (avoid noise)
+            client.subscribe(self.topics['picoammeter'])
+            client.subscribe(self.topics['stage_position'])
+            client.subscribe(self.topics['stage_result'])
+            # Don't subscribe to stage_command - we only publish to it
+
+            self.status_update.emit(f"Connected to MQTT broker at {self.broker_host}:{self.broker_port}")
+        else:
+            self.connected_status = False
+            self.connected.emit(False)
+            self.error_occurred.emit(f"MQTT connection failed: code {rc}")
+
+    def _on_disconnect(self, client, userdata, rc, properties=None, reason_code=None):
+        """MQTT disconnection callback - compatible with both API versions"""
+        self.connected_status = False
+        self.connected.emit(False)
+
+        # Handle both old and new callback signatures
+        if rc is not None:
+            if rc == 0:
+                self.status_update.emit("Disconnected from MQTT broker")
+            else:
+                self.status_update.emit(f"Disconnected from MQTT broker (rc: {rc})")
+        else:
+            self.status_update.emit("Disconnected from MQTT broker")
+
+    def _on_message(self, client, userdata, msg):
+        """MQTT message callback"""
+        try:
+            topic = msg.topic
+            payload = msg.payload.decode()
+
+            if topic == self.topics['picoammeter']:
+                self.current_data_received.emit(payload)
+            elif topic == self.topics['stage_position']:
+                self.position_data_received.emit(payload)
+            elif topic == self.topics['stage_result']:
+                self.command_result_received.emit(payload)
+
+        except Exception as e:
+            self.error_occurred.emit(f"Message processing error: {e}")
+
+    @pyqtSlot()
+    def connect_mqtt(self):
+        """Connect to MQTT broker"""
+        try:
+            self.client.connect(self.broker_host, self.broker_port, 60)
+            self.client.loop_start()
+        except Exception as e:
+            self.error_occurred.emit(f"Connection error: {e}")
+
+    @pyqtSlot()
+    def disconnect_mqtt(self):
+        """Disconnect from MQTT broker"""
+        if self.client:
+            self.client.loop_stop()
+            self.client.disconnect()
+
+    @pyqtSlot(str)
+    def send_command(self, command: str):
+        """Send command via MQTT"""
+        if self.client and self.connected_status:
+            try:
+                self.client.publish(self.topics['stage_command'], command)
+                self.status_update.emit(f"Sent command: {command}")
+            except Exception as e:
+                self.error_occurred.emit(f"Command send error: {e}")
+
+class DataProcessor(QObject):
+    """Process and synchronize high-frequency data"""
+
+    # Signals
+    new_data_point = pyqtSignal(object)  # DataPoint object
+    statistics_update = pyqtSignal(dict)
+    live_readings = pyqtSignal(dict)
+
+    def __init__(self):
+        super().__init__()
+
+        self.data_storage = None  # Will be set by MainWindow
+        self.scan_controller = None  # will be set by MainWindow
+        self.line_scan_controller = None
+
+        # Current state
+        self.latest_positions = {"X": None, "Y": None, "Z": None, "R": None}
+        self.latest_current = None
+        # : Track position timestamps for freshness
+        self.latest_pos_time = {"X": None, "Y": None, "Z": None, "R": None}
+        self.mutex = QMutex()
+
+        # Statistics tracking
+        self.stats = {
+            'position_messages': 0,
+            'current_messages': 0,
+            'data_points_created': 0,
+            'start_time': time.time(),
+            'last_position_time': None,
+            'last_current_time': None
+        }
+
+    def set_data_storage(self, data_storage):
+        """Set reference to data storage for timestamp parsing"""
+        self.data_storage = data_storage
+
+    def get_position_snapshot(self):
+        """Return latest (X,Y,Z) positions + their timestamps in a thread-safe way."""
+        with QMutexLocker(self.mutex):
+            return (
+                self.latest_positions.get('X'),
+                self.latest_positions.get('Y'),
+                self.latest_positions.get('Z'),
+                self.latest_positions.get('R'),
+                self.latest_pos_time.get('X'),
+                self.latest_pos_time.get('Y'),
+                self.latest_pos_time.get('Z'),
+                self.latest_pos_time.get('R'),
+                time.time(),  # 'now' for freshness checks
+            )
+
+    @pyqtSlot(str)
+    def process_position_data(self, payload: str):
+        """Process ECC100 position data - 2: Only update positions, don't emit"""
+        try:
+            current_time = time.time()
+            lines = payload.strip().split('\n')
+
+            for line in lines:
+                if not line:
+                    continue
+
+                parts = line.split('/')
+                if len(parts) == 5:
+                    timestamp_str, x_str, y_str, z_str, r_str = parts
+
+                    # : Parse device timestamp with fallback
+                    device_time = current_time
+                    if self.data_storage:
+                        device_time = self.data_storage.parse_device_timestamp(timestamp_str, current_time)
+
+                    # Parse positions
+                    positions = {}
+                    for axis, val_str in zip(['X', 'Y', 'Z', 'R'],
+                                             [x_str, y_str, z_str, r_str]):
+                        if val_str != "NaN":
+                            positions[axis] = float(val_str)
+                        else:
+                            positions[axis] = None
+
+                    with QMutexLocker(self.mutex):
+                        # : Update positions and timestamps
+                        for axis, val in positions.items():
+                            self.latest_positions[axis] = val
+                            self.latest_pos_time[axis] = device_time
+
+                        self.stats['position_messages'] += 1
+                        self.stats['last_position_time'] = device_time
+
+                        self.live_readings.emit({
+                            "time": current_time,
+                            "current": self.latest_current,
+                            "current_time": self.stats.get("last_current_time"),
+                            "X": self.latest_positions.get('X'),
+                            "Y": self.latest_positions.get('Y'),
+                            "Z": self.latest_positions.get('Z'),
+                            "R": self.latest_positions.get('R'),
+                            "tX": self.latest_pos_time.get('X'),
+                            "tY": self.latest_pos_time.get('Y'),
+                            "tZ": self.latest_pos_time.get('Z'),
+                            "tR": self.latest_pos_time.get('R'),
+                        })
+
+        except Exception as e:
+            print(f"Error processing position data: {e}")
+
+    @pyqtSlot(str)
+    def process_current_data(self, payload: str):
+        """Process picoammeter current data - gate to dwell windows for active controller"""
+        try:
+            current_time = time.time()
+            parts = payload.strip().split('/')
+            if len(parts) != 2:
+                return
+
+            timestamp_str, current_str = parts
+            current_value = float(current_str)
+            current_value = -current_value
+
+            # Device timestamp (with fallback)
+            device_time = current_time
+            if self.data_storage:
+                device_time = self.data_storage.parse_device_timestamp(timestamp_str, current_time)
+
+            with QMutexLocker(self.mutex):
+                self.latest_current = current_value
+                self.stats['current_messages'] += 1
+                self.stats['last_current_time'] = device_time
+
+                # Always emit latest live readings (for UI widgets)
+                self.live_readings.emit({
+                    "time": current_time,
+                    "current": self.latest_current,
+                    "current_time": self.stats.get("last_current_time"),
+                    "X": self.latest_positions.get('X'),
+                    "Y": self.latest_positions.get('Y'),
+                    "Z": self.latest_positions.get('Z'),
+                    "R": self.latest_positions.get('R'),
+                    "tX": self.latest_pos_time.get('X'),
+                    "tY": self.latest_pos_time.get('Y'),
+                    "tZ": self.latest_pos_time.get('Z'),
+                    "tR": self.latest_pos_time.get('R'),
+                })
+
+                # Determine which controller is actively DWELLING (step_timer running, not settling)
+                controller = None
+
+                # 1) Prefer Z-scan controller if scanning (new)
+                zsc = getattr(self, 'z_scan_controller', None)
+                if zsc and getattr(zsc, 'scan_state', None) == ScanState.SCANNING:
+                    controller = zsc
+
+                # 2) Else line-scan (1D XY) controller
+                if controller is None:
+                    lsc = getattr(self, 'line_scan_controller', None)
+                    if lsc and getattr(lsc, 'scan_state', None) == ScanState.SCANNING:
+                        controller = lsc
+
+                # 3) Else 2D scan controller
+                if controller is None:
+                    sc = getattr(self, 'scan_controller', None)
+                    if sc and getattr(sc, 'scan_state', None) == ScanState.SCANNING:
+                        controller = sc
+
+                if (controller and
+                        getattr(controller, 'step_timer', None) and controller.step_timer.isActive() and
+                        not getattr(controller, '_waiting_to_settle', False)):
+
+                    # Skip if in detector lag period
+                    if getattr(controller, "_in_detector_lag", False):
+                        return
+
+                    # Only emit when positions are fresh enough
+                    x = self.latest_positions.get('X')
+                    y = self.latest_positions.get('Y')
+                    z = self.latest_positions.get('Z')
+                    r = self.latest_positions.get('R')
+                    tx = self.latest_pos_time.get('X')
+                    ty = self.latest_pos_time.get('Y')
+                    tz = self.latest_pos_time.get('Z')
+
+                    FRESH = 0.300  # seconds
+
+                    if controller == zsc:
+                        # For a Z-scan dwell, require fresh X, Y, and Z
+                        if (x is not None and y is not None and z is not None and
+                                tx is not None and ty is not None and tz is not None and
+                                abs(device_time - tx) < FRESH and
+                                abs(device_time - ty) < FRESH and
+                                abs(device_time - tz) < FRESH):
+                            dp = DataPoint(
+                                timestamp=device_time,
+                                x_pos=x,
+                                y_pos=y,
+                                z_pos=z,
+                                r_pos=r,
+                                current=current_value
+                            )
+                            self.new_data_point.emit(dp)
+                            self.stats['data_points_created'] += 1
+                    else:
+                        # Regular 2D or 1D XY line dwell: need X and Y fresh
+                        if (x is not None and y is not None and
+                                tx is not None and ty is not None and
+                                abs(device_time - tx) < FRESH and
+                                abs(device_time - ty) < FRESH):
+                            dp = DataPoint(
+                                timestamp=device_time,
+                                x_pos=x,
+                                y_pos=y,
+                                z_pos=z,
+                                r_pos=r,
+                                current=current_value
+                            )
+                            self.new_data_point.emit(dp)
+                            self.stats['data_points_created'] += 1
+
+        except Exception as e:
+            print(f"Error processing current data: {e}")
+
+    @pyqtSlot()
+    def emit_statistics(self):
+        """Emit current statistics with data rates"""
+        with QMutexLocker(self.mutex):
+            stats_copy = self.stats.copy()
+            runtime = time.time() - stats_copy['start_time']
+            stats_copy['runtime'] = runtime
+
+            # Calculate data rates
+            if runtime > 0:
+                stats_copy['position_rate'] = stats_copy['position_messages'] / runtime
+                stats_copy['current_rate'] = stats_copy['current_messages'] / runtime
+                stats_copy['datapoint_rate'] = stats_copy['data_points_created'] / runtime
+            else:
+                stats_copy['position_rate'] = 0
+                stats_copy['current_rate'] = 0
+                stats_copy['datapoint_rate'] = 0
+
+            self.statistics_update.emit(stats_copy)
+
+class CircularBuffer:
+    """Thread-safe circular buffer for high-frequency data"""
+
+    def __init__(self, maxsize: int):
+        self.maxsize = maxsize
+        self.buffer = deque(maxlen=maxsize)
+        self.mutex = QMutex()
+
+    def append(self, item):
+        with QMutexLocker(self.mutex):
+            self.buffer.append(item)
+
+    def get_recent(self, n: int = None) -> List:
+        with QMutexLocker(self.mutex):
+            if n is None:
+                return list(self.buffer)
+            else:
+                return list(self.buffer)[-n:]
+
+    def clear(self):
+        with QMutexLocker(self.mutex):
+            self.buffer.clear()
+
+    def __len__(self):
+        with QMutexLocker(self.mutex):
+            return len(self.buffer)
+
+# ==========================================
+# 2. Scan control
+# ==========================================
+
+# ==========================================
+# 2.1 Scan parameters
+# ==========================================
 @dataclass
 class ZSeriesParameters:
     """Z-series configuration for both 2D and 1D scans"""
@@ -370,6 +772,404 @@ class LineScanParameters:
     def is_z_series_mode(self) -> bool:
         """Check if this is a Z-series scan (different from regular line scan)"""
         return self.z_series.enabled
+
+# ==========================================
+# 2.2 Scan control
+# ==========================================
+
+class ScanController(QObject):
+    """Controls scan execution and movement patterns"""
+
+    # Signals
+    scan_started = pyqtSignal()
+    scan_completed = pyqtSignal()
+    scan_progress = pyqtSignal(int, int)  # current_pixel, total_pixels
+    movement_command = pyqtSignal(str)  # MQTT command to send
+    status_update = pyqtSignal(str)
+    initialization_error = pyqtSignal(str)
+
+    def __init__(self):
+        super().__init__()
+        self.scan_params = None
+        self.scan_state = ScanState.IDLE
+        self.current_pixel = 0
+        self.scan_pattern = []
+        self.movement_timer = QTimer()
+        self.movement_timer.timeout.connect(self.execute_next_movement)
+
+        # Step-and-stop timing
+        self.step_timer = QTimer()
+        self.step_timer.setSingleShot(True)
+        self.step_timer.timeout.connect(self.on_dwell_completed)
+
+        # --- settle gating state & timer ---
+        self.settle_timer = QTimer()
+        self.settle_timer.timeout.connect(self._on_settle_check)
+        self._waiting_to_settle = False
+        self._settle_start_monotonic = 0.0
+        self._settle_consecutive = 0
+        self._current_target = (None, None)
+        self._data_processor = None  # set via set_data_processor(...)
+
+        # Detector lag timer (cancelable)
+        self._detector_lag_timer = QTimer()
+        self._detector_lag_timer.setSingleShot(True)
+        self._detector_lag_timer.timeout.connect(self._begin_dwell_after_detector_lag)
+        self._in_detector_lag = False
+        self._detector_lag_s = 0.350  # Default, will be updated from UI
+
+        # Add initialization movement state
+        self._initializing_scan = False
+        self._init_start_time = 0.0
+        self._init_timeout_s = 60.0  # Fixed 60 second timeout
+
+        # Timer for initialization checks
+        self.init_timer = QTimer()
+        self.init_timer.timeout.connect(self._on_init_position_check)
+
+    def set_data_processor(self, dp):
+        """Inject DataProcessor so we can read live positions."""
+        self._data_processor = dp
+
+    def set_scan_parameters(self, scan_params: ScanParameters):
+        """Set scan parameters"""
+        self.scan_params = scan_params
+        self.generate_scan_pattern()
+
+    def generate_scan_pattern(self):
+        """Generate scan pattern handling any scan direction"""
+        if not self.scan_params:
+            return
+
+        self.scan_pattern = []
+
+        # Determine scan direction
+        x_forward = self.scan_params.x_end >= self.scan_params.x_start
+        y_forward = self.scan_params.y_end >= self.scan_params.y_start
+
+        # Calculate actual step with direction
+        x_step = self.scan_params.x_step_input if x_forward else -self.scan_params.x_step_input
+        y_step = self.scan_params.y_step_input if y_forward else -self.scan_params.y_step_input
+
+        for y_idx in range(self.scan_params.y_pixels):
+            y_pos = self.scan_params.y_start + y_idx * y_step
+
+            # Determine X scan order based on pattern
+            if self.scan_params.pattern == "snake" and y_idx % 2 == 1:
+                # Snake: reverse X order for odd rows
+                x_indices = range(self.scan_params.x_pixels - 1, -1, -1)
+            else:
+                x_indices = range(self.scan_params.x_pixels)
+
+            for x_idx_in_row in x_indices:
+                x_pos = self.scan_params.x_start + x_idx_in_row * x_step
+                # Store grid position for image reconstruction
+                self.scan_pattern.append((x_pos, y_pos, x_idx_in_row, y_idx))
+
+    def get_scan_preview_path(self) -> List[Tuple[float, float]]:
+        """Get scan path for preview visualization"""
+        if not self.scan_params:
+            return []
+
+        path = []
+
+        # Determine scan direction
+        x_forward = self.scan_params.x_end >= self.scan_params.x_start
+        y_forward = self.scan_params.y_end >= self.scan_params.y_start
+
+        # Calculate actual step with direction
+        x_step = self.scan_params.x_step_input if x_forward else -self.scan_params.x_step_input
+        y_step = self.scan_params.y_step_input if y_forward else -self.scan_params.y_step_input
+
+        for y_idx in range(self.scan_params.y_pixels):
+            y_pos = self.scan_params.y_start + y_idx * y_step
+
+            # Determine X direction based on pattern
+            if self.scan_params.pattern == "snake" and y_idx % 2 == 1:
+                # Snake pattern: reverse direction for odd rows
+                x_range = range(self.scan_params.x_pixels - 1, -1, -1)
+            else:
+                # Normal direction
+                x_range = range(self.scan_params.x_pixels)
+
+            for x_idx in x_range:
+                x_pos = self.scan_params.x_start + x_idx * x_step
+                path.append((x_pos, y_pos))
+
+        return path
+
+    def _start_settle_wait(self, x_tgt: float, y_tgt: float):
+        """Begin non-blocking 'in-position' wait before dwell."""
+
+        # Reset any detector lag state
+        self._in_detector_lag = False
+        self._detector_lag_timer.stop()
+
+        self._current_target = (x_tgt, y_tgt)
+        self._settle_consecutive = 0
+        self._waiting_to_settle = True
+        self._settle_start_monotonic = time.monotonic()
+        self.status_update.emit(f"Settling to ({x_tgt:.0f}, {y_tgt:.0f}) nm ...")
+        self.settle_timer.start(20)  # 50 Hz check rate
+
+    def set_detector_lag(self, lag_seconds: float):
+        """Set detector lag time in seconds"""
+        self._detector_lag_s = lag_seconds
+
+    def _start_detector_lag_wait(self):
+        if self._in_detector_lag:
+            return
+        if self._detector_lag_s <= 0:
+            self._start_dwell()
+            return
+        self._in_detector_lag = True
+        self.status_update.emit(f"Waiting {self._detector_lag_s:.3f}s for detector stabilization...")
+        self._detector_lag_timer.start(int(self._detector_lag_s * 1000))
+
+    def _begin_dwell_after_detector_lag(self):
+        """Begin actual dwell after detector lag period."""
+        self._in_detector_lag = False
+        self._start_dwell()  # Existing method
+
+    def _start_dwell(self):
+        """Start the pixel dwell once we're settled (or timed out)."""
+        self.settle_timer.stop()
+        self._waiting_to_settle = False
+        dwell_ms = int(self.scan_params.dwell_time * 1000)
+        self.step_timer.start(dwell_ms)
+
+    @pyqtSlot()
+    def _on_settle_check(self):
+        """Periodic 'are we on target?' check."""
+        if not self._waiting_to_settle or self._data_processor is None:
+            self.settle_timer.stop()
+            return
+
+        x, y, z, r, tx, ty, tz, tr, now = self._data_processor.get_position_snapshot()
+        # Require fresh XY (your DataProcessor already uses 0.2 s freshness elsewhere)
+        if x is None or y is None or tx is None or ty is None:
+            return
+        if abs(now - tx) > 0.300 or abs(now - ty) > 0.300:
+            return
+
+        dx = abs(x - self._current_target[0])
+        dy = abs(y - self._current_target[1])
+
+        if (dx <= self.scan_params.pos_tol_x_nm and
+                dy <= self.scan_params.pos_tol_y_nm):
+            self._settle_consecutive += 1
+        else:
+            self._settle_consecutive = 0
+
+        # Success path: enough consecutive in-tolerance samples
+        if self._settle_consecutive >= self.scan_params.settle_required_samples:
+            self.settle_timer.stop()
+            self._waiting_to_settle = False
+            self.status_update.emit("In position. Waiting for detector...")
+            self._start_detector_lag_wait()
+            return
+
+        # Timeout path
+        if (time.monotonic() - self._settle_start_monotonic) >= self.scan_params.settle_timeout_s:
+            self.settle_timer.stop()
+            self._waiting_to_settle = False
+            self.status_update.emit(f"Settle timeout (Δ≈{dx:.0f},{dy:.0f} nm). Proceeding.")
+            self._start_detector_lag_wait()
+            return
+
+    def start_scan(self):
+        """Start scan - main entry point that moves to start position first"""
+        if not self.scan_params:
+            self.status_update.emit("ERROR: No scan parameters set")
+            return
+
+        self.scan_state = ScanState.SCANNING
+        self.scan_started.emit()
+
+        # Move to start position first, then begin scan pattern
+        self._move_to_start_position()
+
+    def _move_to_start_position(self):
+        """Move all axes to scan start position before beginning scan pattern"""
+        self._initializing_scan = True
+        self._init_start_time = time.monotonic()
+
+        start_x = self.scan_params.x_start
+        start_y = self.scan_params.y_start
+
+        self.status_update.emit(f"Moving to scan start position ({start_x:.0f}, {start_y:.0f}) nm...")
+
+        # Send movement commands to start position
+        self.movement_command.emit(f"MOVE/X/{start_x:.0f}")
+        self.movement_command.emit(f"MOVE/Y/{start_y:.0f}")
+
+        # Start checking for arrival at start position
+        self.init_timer.start(50)  # Check every 50ms
+
+    def start_step_stop_scan(self):
+        """Start step-and-stop scan"""
+        self.status_update.emit("Starting step-and-stop scan")
+        self.current_pixel = 0
+        self.execute_next_movement()
+
+    def start_continuous_scan(self):
+        """Start continuous scan"""
+        self.status_update.emit("Starting continuous scan")
+        # For continuous, we send move commands with calculated timing
+        interval_ms = int(1000 / 10)  # 10 Hz movement updates
+        self.movement_timer.start(interval_ms)
+
+    @pyqtSlot()
+    def _on_init_position_check(self):
+        """Check if we've reached the scan start position"""
+        if not self._initializing_scan or self._data_processor is None:
+            self.init_timer.stop()
+            return
+
+        # Get current position
+        x, y, z, r, tx, ty, tz, tr, now = self._data_processor.get_position_snapshot()
+
+        # Check if we have fresh position data
+        if x is None or y is None or tx is None or ty is None:
+            return
+        if abs(now - tx) > 0.500 or abs(now - ty) > 0.500:  # 500ms freshness
+            return
+
+        # Check if we're at start position (use larger tolerance for initial move)
+        start_x = self.scan_params.x_start
+        start_y = self.scan_params.y_start
+
+        init_tol_x = self.scan_params.pos_tol_x_nm
+        init_tol_y = self.scan_params.pos_tol_y_nm
+
+        dx = abs(x - start_x)
+        dy = abs(y - start_y)
+
+        if dx <= init_tol_x and dy <= init_tol_y:
+            # Successfully reached start position
+            self.init_timer.stop()
+            self._initializing_scan = False
+            self.status_update.emit("Reached scan start position. Beginning scan pattern...")
+
+            # Now start the actual scan pattern
+            if self.scan_params.mode == ScanMode.STEP_STOP:
+                self.start_step_stop_scan()
+            else:
+                self.start_continuous_scan()
+            return
+
+        # Check for timeout
+        elapsed = time.monotonic() - self._init_start_time
+        if elapsed >= self._init_timeout_s:
+            # TIMEOUT ERROR - Stop the scan
+            self.init_timer.stop()
+            self._initializing_scan = False
+
+            error_msg = (f"ERROR: Cannot reach scan start position after {elapsed:.1f}s. "
+                         f"Current position error: ΔX={dx:.0f}nm, ΔY={dy:.0f}nm. "
+                         f"Scan aborted.")
+
+            self.status_update.emit(error_msg)
+
+            # Emit error signal to show message box in main window
+            if hasattr(self, 'initialization_error'):
+                self.initialization_error.emit(error_msg)
+
+            # Stop the scan completely
+            self.scan_state = ScanState.IDLE
+            self.scan_completed.emit()  # This will reset UI state
+            return
+
+        # Still moving - update status every 5 seconds
+        if int(elapsed * 2) % 10 == 0:  # Every 5 seconds
+            remaining = self._init_timeout_s - elapsed
+            self.status_update.emit(
+                f"Moving to start... {elapsed:.1f}s elapsed, {remaining:.1f}s remaining "
+                f"(ΔX={dx:.0f}nm, ΔY={dy:.0f}nm)"
+            )
+
+    @pyqtSlot()
+    def execute_next_movement(self):
+        """Execute next movement in scan pattern"""
+        if (self.scan_state != ScanState.SCANNING or
+                self.current_pixel >= len(self.scan_pattern)):
+            self.complete_scan()
+            return
+
+        x_pos, y_pos, x_idx, y_idx = self.scan_pattern[self.current_pixel]
+
+        # Send pixel coordinates to image reconstructor using thread-safe method
+        if self.image_reconstructor:
+            self.image_reconstructor.set_current_pixel(x_idx, y_idx)
+
+        # Send movement commands
+        self.movement_command.emit(f"MOVE/X/{x_pos:.0f}")
+        self.movement_command.emit(f"MOVE/Y/{y_pos:.0f}")
+
+        self.scan_progress.emit(self.current_pixel + 1, len(self.scan_pattern))
+
+        if self.scan_params.mode == ScanMode.STEP_STOP:
+            self._start_settle_wait(x_pos, y_pos)
+        else:
+            self.current_pixel += 1
+
+    @pyqtSlot()
+    def on_dwell_completed(self):
+        """Called when dwell time is completed in step-stop mode"""
+        self.current_pixel += 1
+        self.execute_next_movement()
+
+    @pyqtSlot()
+    def pause_scan(self):
+        """Pause the scan"""
+        if self.scan_state == ScanState.SCANNING:
+            self.scan_state = ScanState.PAUSED
+            self.movement_timer.stop()
+            self.step_timer.stop()
+            self.settle_timer.stop()
+            self.status_update.emit("Scan paused")
+
+    @pyqtSlot()
+    def resume_scan(self):
+        """Resume the scan"""
+        if self.scan_state == ScanState.PAUSED:
+            self.scan_state = ScanState.SCANNING
+            if self.scan_params.mode == ScanMode.STEP_STOP:
+                self.execute_next_movement()
+            else:
+                self.movement_timer.start()
+            self.status_update.emit("Scan resumed")
+
+    @pyqtSlot()
+    def stop_scan(self):
+        """Stop the scan"""
+        self.scan_state = ScanState.STOPPING
+        self.movement_timer.stop()
+        self.step_timer.stop()
+        self.init_timer.stop()  # Also stop initialization timer
+        self.settle_timer.stop()
+        self._detector_lag_timer.stop()
+        self._in_detector_lag = False
+        self._initializing_scan = False  # Reset initialization state
+
+        # Send stop commands
+        self.movement_command.emit("STOP/X")
+        self.movement_command.emit("STOP/Y")
+
+        self.complete_scan()
+
+    def complete_scan(self):
+        """Complete the scan"""
+        self.scan_state = ScanState.IDLE
+        self.movement_timer.stop()
+        self.step_timer.stop()
+
+        # Clear pixel indices in reconstructor
+        if self.image_reconstructor:
+            self.image_reconstructor.clear_current_pixel()
+
+        self.scan_completed.emit()
+        self.status_update.emit("Scan completed")
 
 class LineScanController(QObject):
     """Controls line scan execution - simplified to use existing data pipeline"""
@@ -1594,6 +2394,9 @@ class ZScanController(QObject):
         self.scan_completed.emit()
         self.status_update.emit(f"Z-scan completed: {self.current_z_index} points measured")
 
+# ==========================================
+# 2.3 Data storage
+# ==========================================
 @dataclass
 class DataPoint:
     """Single data point with timestamp and position"""
@@ -1604,35 +2407,8 @@ class DataPoint:
     r_pos: Optional[float]
     current: float
 
-class CircularBuffer:
-    """Thread-safe circular buffer for high-frequency data"""
-
-    def __init__(self, maxsize: int):
-        self.maxsize = maxsize
-        self.buffer = deque(maxlen=maxsize)
-        self.mutex = QMutex()
-
-    def append(self, item):
-        with QMutexLocker(self.mutex):
-            self.buffer.append(item)
-
-    def get_recent(self, n: int = None) -> List:
-        with QMutexLocker(self.mutex):
-            if n is None:
-                return list(self.buffer)
-            else:
-                return list(self.buffer)[-n:]
-
-    def clear(self):
-        with QMutexLocker(self.mutex):
-            self.buffer.clear()
-
-    def __len__(self):
-        with QMutexLocker(self.mutex):
-            return len(self.buffer)
-
 class DataStorage:
-    """Simplified HDF5-only data storage"""
+    """Simplified data storage"""
 
     def __init__(self):
         # Separate counters for each scan type
@@ -2163,360 +2939,61 @@ class DataStorage:
             print(f"Error exporting line scan: {e}")
             return None, None
 
+class HDF5WriterThread(QThread):
+    """Background thread for non-blocking HDF5 writes"""
 
-class MQTTController(QObject):
-    """MQTT communication controller"""
-
-    # Signals
-    connected = pyqtSignal(bool)
-    position_data_received = pyqtSignal(str)  # Raw position payload
-    current_data_received = pyqtSignal(str)  # Raw current payload
-    command_result_received = pyqtSignal(str)  # Command result
-    status_update = pyqtSignal(str)
     error_occurred = pyqtSignal(str)
 
-    def __init__(self):
+    def __init__(self, data_storage, max_queue_size=50):
         super().__init__()
-        self.client = None
-        self.broker_host = "localhost"
-        self.broker_port = 1883
-        self.connected_status = False
-
-        # Topics
-        self.topics = {
-            'picoammeter': "picoammeter/current",
-            'stage_position': "microscope/stage/position",
-            'stage_command': "microscope/stage/command",
-            'stage_result': "microscope/stage/result"
-        }
-
-    def setup_mqtt(self, host: str, port: int):
-        """Setup MQTT client"""
-        self.broker_host = host
-        self.broker_port = port
-
-        try:
-            self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-        except Exception:
-            self.client = mqtt.Client()
-        self.client.on_connect = self._on_connect
-        self.client.on_message = self._on_message
-        self.client.on_disconnect = self._on_disconnect
-
-    def _on_connect(self, client, userdata, flags, rc, properties=None):
-        """MQTT connection callback"""
-        if rc == 0:
-            self.connected_status = True
-            self.connected.emit(True)
-
-            # : Subscribe only to inbound topics (avoid noise)
-            client.subscribe(self.topics['picoammeter'])
-            client.subscribe(self.topics['stage_position'])
-            client.subscribe(self.topics['stage_result'])
-            # Don't subscribe to stage_command - we only publish to it
-
-            self.status_update.emit(f"Connected to MQTT broker at {self.broker_host}:{self.broker_port}")
-        else:
-            self.connected_status = False
-            self.connected.emit(False)
-            self.error_occurred.emit(f"MQTT connection failed: code {rc}")
-
-    def _on_disconnect(self, client, userdata, rc, properties=None, reason_code=None):
-        """MQTT disconnection callback - compatible with both API versions"""
-        self.connected_status = False
-        self.connected.emit(False)
-
-        # Handle both old and new callback signatures
-        if rc is not None:
-            if rc == 0:
-                self.status_update.emit("Disconnected from MQTT broker")
-            else:
-                self.status_update.emit(f"Disconnected from MQTT broker (rc: {rc})")
-        else:
-            self.status_update.emit("Disconnected from MQTT broker")
-
-    def _on_message(self, client, userdata, msg):
-        """MQTT message callback"""
-        try:
-            topic = msg.topic
-            payload = msg.payload.decode()
-
-            if topic == self.topics['picoammeter']:
-                self.current_data_received.emit(payload)
-            elif topic == self.topics['stage_position']:
-                self.position_data_received.emit(payload)
-            elif topic == self.topics['stage_result']:
-                self.command_result_received.emit(payload)
-
-        except Exception as e:
-            self.error_occurred.emit(f"Message processing error: {e}")
-
-    @pyqtSlot()
-    def connect_mqtt(self):
-        """Connect to MQTT broker"""
-        try:
-            self.client.connect(self.broker_host, self.broker_port, 60)
-            self.client.loop_start()
-        except Exception as e:
-            self.error_occurred.emit(f"Connection error: {e}")
-
-    @pyqtSlot()
-    def disconnect_mqtt(self):
-        """Disconnect from MQTT broker"""
-        if self.client:
-            self.client.loop_stop()
-            self.client.disconnect()
-
-    @pyqtSlot(str)
-    def send_command(self, command: str):
-        """Send command via MQTT"""
-        if self.client and self.connected_status:
-            try:
-                self.client.publish(self.topics['stage_command'], command)
-                self.status_update.emit(f"Sent command: {command}")
-            except Exception as e:
-                self.error_occurred.emit(f"Command send error: {e}")
-
-class DataProcessor(QObject):
-    """Process and synchronize high-frequency data"""
-
-    # Signals
-    new_data_point = pyqtSignal(object)  # DataPoint object
-    statistics_update = pyqtSignal(dict)
-    live_readings = pyqtSignal(dict)
-
-    def __init__(self):
-        super().__init__()
-
-        self.data_storage = None  # Will be set by MainWindow
-        self.scan_controller = None  # will be set by MainWindow
-        self.line_scan_controller = None
-
-        # Current state
-        self.latest_positions = {"X": None, "Y": None, "Z": None, "R": None}
-        self.latest_current = None
-        # : Track position timestamps for freshness
-        self.latest_pos_time = {"X": None, "Y": None, "Z": None, "R": None}
-        self.mutex = QMutex()
-
-        # Statistics tracking
-        self.stats = {
-            'position_messages': 0,
-            'current_messages': 0,
-            'data_points_created': 0,
-            'start_time': time.time(),
-            'last_position_time': None,
-            'last_current_time': None
-        }
-
-    def set_data_storage(self, data_storage):
-        """Set reference to data storage for timestamp parsing"""
         self.data_storage = data_storage
+        self.write_queue = queue.Queue(maxsize=max_queue_size)
+        self._stop_requested = False
 
-    def get_position_snapshot(self):
-        """Return latest (X,Y,Z) positions + their timestamps in a thread-safe way."""
-        with QMutexLocker(self.mutex):
-            return (
-                self.latest_positions.get('X'),
-                self.latest_positions.get('Y'),
-                self.latest_positions.get('Z'),
-                self.latest_positions.get('R'),
-                self.latest_pos_time.get('X'),
-                self.latest_pos_time.get('Y'),
-                self.latest_pos_time.get('Z'),
-                self.latest_pos_time.get('R'),
-                time.time(),  # 'now' for freshness checks
-            )
+    def run(self):
+        """Worker thread main loop"""
+        while not self._stop_requested:
+            try:
+                # Wait for write request (with timeout to check stop flag)
+                filepath, data_batch = self.write_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
 
-    @pyqtSlot(str)
-    def process_position_data(self, payload: str):
-        """Process ECC100 position data - 2: Only update positions, don't emit"""
+            try:
+                # Do the actual HDF5 write (off the main thread)
+                self.data_storage.save_raw_data_batch(filepath, data_batch)
+            except Exception as e:
+                self.error_occurred.emit(f"HDF5 write error: {e}")
+            finally:
+                self.write_queue.task_done()
+
+    @pyqtSlot(str, list)
+    def enqueue_write(self, filepath: str, data_batch: list):
+        """Queue a batch for writing (non-blocking)"""
         try:
-            current_time = time.time()
-            lines = payload.strip().split('\n')
+            # Try to add to queue without blocking
+            self.write_queue.put_nowait((filepath, list(data_batch)))
+        except queue.Full:
+            # Handle backpressure: drop oldest, add new
+            try:
+                self.write_queue.get_nowait()
+                self.write_queue.task_done()
+                self.write_queue.put_nowait((filepath, list(data_batch)))
+            except:
+                pass  # If still can't add, just drop it
 
-            for line in lines:
-                if not line:
-                    continue
+    def stop(self):
+        """Request thread to stop"""
+        self._stop_requested = True
+        self.wait(2000)  # Wait up to 2 seconds for thread to finish
 
-                parts = line.split('/')
-                if len(parts) == 5:
-                    timestamp_str, x_str, y_str, z_str, r_str = parts
+# ==========================================
+# 3. User interface
+# ==========================================
 
-                    # : Parse device timestamp with fallback
-                    device_time = current_time
-                    if self.data_storage:
-                        device_time = self.data_storage.parse_device_timestamp(timestamp_str, current_time)
-
-                    # Parse positions
-                    positions = {}
-                    for axis, val_str in zip(['X', 'Y', 'Z', 'R'],
-                                             [x_str, y_str, z_str, r_str]):
-                        if val_str != "NaN":
-                            positions[axis] = float(val_str)
-                        else:
-                            positions[axis] = None
-
-                    with QMutexLocker(self.mutex):
-                        # : Update positions and timestamps
-                        for axis, val in positions.items():
-                            self.latest_positions[axis] = val
-                            self.latest_pos_time[axis] = device_time
-
-                        self.stats['position_messages'] += 1
-                        self.stats['last_position_time'] = device_time
-                    
-                        self.live_readings.emit({
-                        "time": current_time,
-                        "current": self.latest_current,
-                        "current_time": self.stats.get("last_current_time"),
-                        "X": self.latest_positions.get('X'),
-                        "Y": self.latest_positions.get('Y'),
-                        "Z": self.latest_positions.get('Z'),
-                        "R": self.latest_positions.get('R'),
-                        "tX": self.latest_pos_time.get('X'),
-                        "tY": self.latest_pos_time.get('Y'),
-                        "tZ": self.latest_pos_time.get('Z'),
-                        "tR": self.latest_pos_time.get('R'),
-                    })
-
-        except Exception as e:
-            print(f"Error processing position data: {e}")
-
-    @pyqtSlot(str)
-    def process_current_data(self, payload: str):
-        """Process picoammeter current data - gate to dwell windows for active controller"""
-        try:
-            current_time = time.time()
-            parts = payload.strip().split('/')
-            if len(parts) != 2:
-                return
-
-            timestamp_str, current_str = parts
-            current_value = float(current_str)
-            current_value = -current_value
-
-            # Device timestamp (with fallback)
-            device_time = current_time
-            if self.data_storage:
-                device_time = self.data_storage.parse_device_timestamp(timestamp_str, current_time)
-
-            with QMutexLocker(self.mutex):
-                self.latest_current = current_value
-                self.stats['current_messages'] += 1
-                self.stats['last_current_time'] = device_time
-
-                # Always emit latest live readings (for UI widgets)
-                self.live_readings.emit({
-                    "time": current_time,
-                    "current": self.latest_current,
-                    "current_time": self.stats.get("last_current_time"),
-                    "X": self.latest_positions.get('X'),
-                    "Y": self.latest_positions.get('Y'),
-                    "Z": self.latest_positions.get('Z'),
-                    "R": self.latest_positions.get('R'),
-                    "tX": self.latest_pos_time.get('X'),
-                    "tY": self.latest_pos_time.get('Y'),
-                    "tZ": self.latest_pos_time.get('Z'),
-                    "tR": self.latest_pos_time.get('R'),
-                })
-
-                # Determine which controller is actively DWELLING (step_timer running, not settling)
-                controller = None
-
-                # 1) Prefer Z-scan controller if scanning (new)
-                zsc = getattr(self, 'z_scan_controller', None)
-                if zsc and getattr(zsc, 'scan_state', None) == ScanState.SCANNING:
-                    controller = zsc
-
-                # 2) Else line-scan (1D XY) controller
-                if controller is None:
-                    lsc = getattr(self, 'line_scan_controller', None)
-                    if lsc and getattr(lsc, 'scan_state', None) == ScanState.SCANNING:
-                        controller = lsc
-
-                # 3) Else 2D scan controller
-                if controller is None:
-                    sc = getattr(self, 'scan_controller', None)
-                    if sc and getattr(sc, 'scan_state', None) == ScanState.SCANNING:
-                        controller = sc
-
-                if (controller and
-                        getattr(controller, 'step_timer', None) and controller.step_timer.isActive() and
-                        not getattr(controller, '_waiting_to_settle', False)):
-
-                    # Skip if in detector lag period
-                    if getattr(controller, "_in_detector_lag", False):
-                        return
-
-                    # Only emit when positions are fresh enough
-                    x = self.latest_positions.get('X')
-                    y = self.latest_positions.get('Y')
-                    z = self.latest_positions.get('Z')
-                    r = self.latest_positions.get('R')
-                    tx = self.latest_pos_time.get('X')
-                    ty = self.latest_pos_time.get('Y')
-                    tz = self.latest_pos_time.get('Z')
-
-                    FRESH = 0.300  # seconds
-
-                    if controller == zsc:
-                        # For a Z-scan dwell, require fresh X, Y, and Z
-                        if (x is not None and y is not None and z is not None and
-                                tx is not None and ty is not None and tz is not None and
-                                abs(device_time - tx) < FRESH and
-                                abs(device_time - ty) < FRESH and
-                                abs(device_time - tz) < FRESH):
-                            dp = DataPoint(
-                                timestamp=device_time,
-                                x_pos=x,
-                                y_pos=y,
-                                z_pos=z,
-                                r_pos=r,
-                                current=current_value
-                            )
-                            self.new_data_point.emit(dp)
-                            self.stats['data_points_created'] += 1
-                    else:
-                        # Regular 2D or 1D XY line dwell: need X and Y fresh
-                        if (x is not None and y is not None and
-                                tx is not None and ty is not None and
-                                abs(device_time - tx) < FRESH and
-                                abs(device_time - ty) < FRESH):
-                            dp = DataPoint(
-                                timestamp=device_time,
-                                x_pos=x,
-                                y_pos=y,
-                                z_pos=z,
-                                r_pos=r,
-                                current=current_value
-                            )
-                            self.new_data_point.emit(dp)
-                            self.stats['data_points_created'] += 1
-
-        except Exception as e:
-            print(f"Error processing current data: {e}")
-
-    @pyqtSlot()
-    def emit_statistics(self):
-        """Emit current statistics with data rates"""
-        with QMutexLocker(self.mutex):
-            stats_copy = self.stats.copy()
-            runtime = time.time() - stats_copy['start_time']
-            stats_copy['runtime'] = runtime
-
-            # Calculate data rates
-            if runtime > 0:
-                stats_copy['position_rate'] = stats_copy['position_messages'] / runtime
-                stats_copy['current_rate'] = stats_copy['current_messages'] / runtime
-                stats_copy['datapoint_rate'] = stats_copy['data_points_created'] / runtime
-            else:
-                stats_copy['position_rate'] = 0
-                stats_copy['current_rate'] = 0
-                stats_copy['datapoint_rate'] = 0
-
-            self.statistics_update.emit(stats_copy)
-
+# ==========================================
+# 3.1 Live result display
+# ==========================================
 class ImageReconstructor(QObject):
     """Real-time image reconstruction"""
 
@@ -2740,400 +3217,9 @@ class LineReconstructor(QObject):
         self.emit_full_line()
         self.scan_completed.emit()
 
-class ScanController(QObject):
-    """Controls scan execution and movement patterns"""
-
-    # Signals
-    scan_started = pyqtSignal()
-    scan_completed = pyqtSignal()
-    scan_progress = pyqtSignal(int, int)  # current_pixel, total_pixels
-    movement_command = pyqtSignal(str)  # MQTT command to send
-    status_update = pyqtSignal(str)
-    initialization_error = pyqtSignal(str)
-
-    def __init__(self):
-        super().__init__()
-        self.scan_params = None
-        self.scan_state = ScanState.IDLE
-        self.current_pixel = 0
-        self.scan_pattern = []
-        self.movement_timer = QTimer()
-        self.movement_timer.timeout.connect(self.execute_next_movement)
-
-        # Step-and-stop timing
-        self.step_timer = QTimer()
-        self.step_timer.setSingleShot(True)
-        self.step_timer.timeout.connect(self.on_dwell_completed)
-
-        # --- settle gating state & timer ---
-        self.settle_timer = QTimer()
-        self.settle_timer.timeout.connect(self._on_settle_check)
-        self._waiting_to_settle = False
-        self._settle_start_monotonic = 0.0
-        self._settle_consecutive = 0
-        self._current_target = (None, None)
-        self._data_processor = None  # set via set_data_processor(...)
-
-        # Detector lag timer (cancelable)
-        self._detector_lag_timer = QTimer()
-        self._detector_lag_timer.setSingleShot(True)
-        self._detector_lag_timer.timeout.connect(self._begin_dwell_after_detector_lag)
-        self._in_detector_lag = False
-        self._detector_lag_s = 0.350  # Default, will be updated from UI
-
-        # Add initialization movement state
-        self._initializing_scan = False
-        self._init_start_time = 0.0
-        self._init_timeout_s = 60.0  # Fixed 60 second timeout
-
-        # Timer for initialization checks
-        self.init_timer = QTimer()
-        self.init_timer.timeout.connect(self._on_init_position_check)
-
-    def set_data_processor(self, dp):
-        """Inject DataProcessor so we can read live positions."""
-        self._data_processor = dp
-
-    def set_scan_parameters(self, scan_params: ScanParameters):
-        """Set scan parameters"""
-        self.scan_params = scan_params
-        self.generate_scan_pattern()
-
-    def generate_scan_pattern(self):
-        """Generate scan pattern handling any scan direction"""
-        if not self.scan_params:
-            return
-
-        self.scan_pattern = []
-
-        # Determine scan direction
-        x_forward = self.scan_params.x_end >= self.scan_params.x_start
-        y_forward = self.scan_params.y_end >= self.scan_params.y_start
-
-        # Calculate actual step with direction
-        x_step = self.scan_params.x_step_input if x_forward else -self.scan_params.x_step_input
-        y_step = self.scan_params.y_step_input if y_forward else -self.scan_params.y_step_input
-
-        for y_idx in range(self.scan_params.y_pixels):
-            y_pos = self.scan_params.y_start + y_idx * y_step
-
-            # Determine X scan order based on pattern
-            if self.scan_params.pattern == "snake" and y_idx % 2 == 1:
-                # Snake: reverse X order for odd rows
-                x_indices = range(self.scan_params.x_pixels - 1, -1, -1)
-            else:
-                x_indices = range(self.scan_params.x_pixels)
-
-            for x_idx_in_row in x_indices:
-                x_pos = self.scan_params.x_start + x_idx_in_row * x_step
-                # Store grid position for image reconstruction
-                self.scan_pattern.append((x_pos, y_pos, x_idx_in_row, y_idx))
-
-    def get_scan_preview_path(self) -> List[Tuple[float, float]]:
-        """Get scan path for preview visualization"""
-        if not self.scan_params:
-            return []
-
-        path = []
-
-        # Determine scan direction
-        x_forward = self.scan_params.x_end >= self.scan_params.x_start
-        y_forward = self.scan_params.y_end >= self.scan_params.y_start
-
-        # Calculate actual step with direction
-        x_step = self.scan_params.x_step_input if x_forward else -self.scan_params.x_step_input
-        y_step = self.scan_params.y_step_input if y_forward else -self.scan_params.y_step_input
-
-        for y_idx in range(self.scan_params.y_pixels):
-            y_pos = self.scan_params.y_start + y_idx * y_step
-
-            # Determine X direction based on pattern
-            if self.scan_params.pattern == "snake" and y_idx % 2 == 1:
-                # Snake pattern: reverse direction for odd rows
-                x_range = range(self.scan_params.x_pixels - 1, -1, -1)
-            else:
-                # Normal direction
-                x_range = range(self.scan_params.x_pixels)
-
-            for x_idx in x_range:
-                x_pos = self.scan_params.x_start + x_idx * x_step
-                path.append((x_pos, y_pos))
-
-        return path
-
-    def _start_settle_wait(self, x_tgt: float, y_tgt: float):
-        """Begin non-blocking 'in-position' wait before dwell."""
-
-        # Reset any detector lag state
-        self._in_detector_lag = False
-        self._detector_lag_timer.stop()
-
-        self._current_target = (x_tgt, y_tgt)
-        self._settle_consecutive = 0
-        self._waiting_to_settle = True
-        self._settle_start_monotonic = time.monotonic()
-        self.status_update.emit(f"Settling to ({x_tgt:.0f}, {y_tgt:.0f}) nm ...")
-        self.settle_timer.start(20)  # 50 Hz check rate
-
-    def set_detector_lag(self, lag_seconds: float):
-        """Set detector lag time in seconds"""
-        self._detector_lag_s = lag_seconds
-
-    def _start_detector_lag_wait(self):
-        if self._in_detector_lag:
-            return
-        if self._detector_lag_s <= 0:
-            self._start_dwell()
-            return
-        self._in_detector_lag = True
-        self.status_update.emit(f"Waiting {self._detector_lag_s:.3f}s for detector stabilization...")
-        self._detector_lag_timer.start(int(self._detector_lag_s * 1000))
-
-    def _begin_dwell_after_detector_lag(self):
-        """Begin actual dwell after detector lag period."""
-        self._in_detector_lag = False
-        self._start_dwell()  # Existing method
-
-    def _start_dwell(self):
-        """Start the pixel dwell once we're settled (or timed out)."""
-        self.settle_timer.stop()
-        self._waiting_to_settle = False
-        dwell_ms = int(self.scan_params.dwell_time * 1000)
-        self.step_timer.start(dwell_ms)
-
-    @pyqtSlot()
-    def _on_settle_check(self):
-        """Periodic 'are we on target?' check."""
-        if not self._waiting_to_settle or self._data_processor is None:
-            self.settle_timer.stop()
-            return
-
-        x, y, z, r, tx, ty, tz, tr, now = self._data_processor.get_position_snapshot()
-        # Require fresh XY (your DataProcessor already uses 0.2 s freshness elsewhere)
-        if x is None or y is None or tx is None or ty is None:
-            return
-        if abs(now - tx) > 0.300 or abs(now - ty) > 0.300:
-            return
-
-        dx = abs(x - self._current_target[0])
-        dy = abs(y - self._current_target[1])
-
-        if (dx <= self.scan_params.pos_tol_x_nm and
-                dy <= self.scan_params.pos_tol_y_nm):
-            self._settle_consecutive += 1
-        else:
-            self._settle_consecutive = 0
-
-        # Success path: enough consecutive in-tolerance samples
-        if self._settle_consecutive >= self.scan_params.settle_required_samples:
-            self.settle_timer.stop()
-            self._waiting_to_settle = False
-            self.status_update.emit("In position. Waiting for detector...")
-            self._start_detector_lag_wait()
-            return
-
-        # Timeout path
-        if (time.monotonic() - self._settle_start_monotonic) >= self.scan_params.settle_timeout_s:
-            self.settle_timer.stop()
-            self._waiting_to_settle = False
-            self.status_update.emit(f"Settle timeout (Δ≈{dx:.0f},{dy:.0f} nm). Proceeding.")
-            self._start_detector_lag_wait()
-            return
-
-    def start_scan(self):
-        """Start scan - main entry point that moves to start position first"""
-        if not self.scan_params:
-            self.status_update.emit("ERROR: No scan parameters set")
-            return
-
-        self.scan_state = ScanState.SCANNING
-        self.scan_started.emit()
-
-        # Move to start position first, then begin scan pattern
-        self._move_to_start_position()
-
-    def _move_to_start_position(self):
-        """Move all axes to scan start position before beginning scan pattern"""
-        self._initializing_scan = True
-        self._init_start_time = time.monotonic()
-
-        start_x = self.scan_params.x_start
-        start_y = self.scan_params.y_start
-
-        self.status_update.emit(f"Moving to scan start position ({start_x:.0f}, {start_y:.0f}) nm...")
-
-        # Send movement commands to start position
-        self.movement_command.emit(f"MOVE/X/{start_x:.0f}")
-        self.movement_command.emit(f"MOVE/Y/{start_y:.0f}")
-
-        # Start checking for arrival at start position
-        self.init_timer.start(50)  # Check every 50ms
-
-    def start_step_stop_scan(self):
-        """Start step-and-stop scan"""
-        self.status_update.emit("Starting step-and-stop scan")
-        self.current_pixel = 0
-        self.execute_next_movement()
-
-    def start_continuous_scan(self):
-        """Start continuous scan"""
-        self.status_update.emit("Starting continuous scan")
-        # For continuous, we send move commands with calculated timing
-        interval_ms = int(1000 / 10)  # 10 Hz movement updates
-        self.movement_timer.start(interval_ms)
-
-    @pyqtSlot()
-    def _on_init_position_check(self):
-        """Check if we've reached the scan start position"""
-        if not self._initializing_scan or self._data_processor is None:
-            self.init_timer.stop()
-            return
-
-        # Get current position
-        x, y, z, r, tx, ty, tz, tr, now = self._data_processor.get_position_snapshot()
-
-        # Check if we have fresh position data
-        if x is None or y is None or tx is None or ty is None:
-            return
-        if abs(now - tx) > 0.500 or abs(now - ty) > 0.500:  # 500ms freshness
-            return
-
-        # Check if we're at start position (use larger tolerance for initial move)
-        start_x = self.scan_params.x_start
-        start_y = self.scan_params.y_start
-
-        init_tol_x = self.scan_params.pos_tol_x_nm
-        init_tol_y = self.scan_params.pos_tol_y_nm
-
-        dx = abs(x - start_x)
-        dy = abs(y - start_y)
-
-        if dx <= init_tol_x and dy <= init_tol_y:
-            # Successfully reached start position
-            self.init_timer.stop()
-            self._initializing_scan = False
-            self.status_update.emit("Reached scan start position. Beginning scan pattern...")
-
-            # Now start the actual scan pattern
-            if self.scan_params.mode == ScanMode.STEP_STOP:
-                self.start_step_stop_scan()
-            else:
-                self.start_continuous_scan()
-            return
-
-        # Check for timeout
-        elapsed = time.monotonic() - self._init_start_time
-        if elapsed >= self._init_timeout_s:
-            # TIMEOUT ERROR - Stop the scan
-            self.init_timer.stop()
-            self._initializing_scan = False
-
-            error_msg = (f"ERROR: Cannot reach scan start position after {elapsed:.1f}s. "
-                         f"Current position error: ΔX={dx:.0f}nm, ΔY={dy:.0f}nm. "
-                         f"Scan aborted.")
-
-            self.status_update.emit(error_msg)
-
-            # Emit error signal to show message box in main window
-            if hasattr(self, 'initialization_error'):
-                self.initialization_error.emit(error_msg)
-
-            # Stop the scan completely
-            self.scan_state = ScanState.IDLE
-            self.scan_completed.emit()  # This will reset UI state
-            return
-
-        # Still moving - update status every 5 seconds
-        if int(elapsed * 2) % 10 == 0:  # Every 5 seconds
-            remaining = self._init_timeout_s - elapsed
-            self.status_update.emit(
-                f"Moving to start... {elapsed:.1f}s elapsed, {remaining:.1f}s remaining "
-                f"(ΔX={dx:.0f}nm, ΔY={dy:.0f}nm)"
-            )
-
-    @pyqtSlot()
-    def execute_next_movement(self):
-        """Execute next movement in scan pattern"""
-        if (self.scan_state != ScanState.SCANNING or
-                self.current_pixel >= len(self.scan_pattern)):
-            self.complete_scan()
-            return
-
-        x_pos, y_pos, x_idx, y_idx = self.scan_pattern[self.current_pixel]
-
-        # Send pixel coordinates to image reconstructor using thread-safe method
-        if self.image_reconstructor:
-            self.image_reconstructor.set_current_pixel(x_idx, y_idx)
-
-        # Send movement commands
-        self.movement_command.emit(f"MOVE/X/{x_pos:.0f}")
-        self.movement_command.emit(f"MOVE/Y/{y_pos:.0f}")
-
-        self.scan_progress.emit(self.current_pixel + 1, len(self.scan_pattern))
-
-        if self.scan_params.mode == ScanMode.STEP_STOP:
-            self._start_settle_wait(x_pos, y_pos)
-        else:
-            self.current_pixel += 1
-
-    @pyqtSlot()
-    def on_dwell_completed(self):
-        """Called when dwell time is completed in step-stop mode"""
-        self.current_pixel += 1
-        self.execute_next_movement()
-
-    @pyqtSlot()
-    def pause_scan(self):
-        """Pause the scan"""
-        if self.scan_state == ScanState.SCANNING:
-            self.scan_state = ScanState.PAUSED
-            self.movement_timer.stop()
-            self.step_timer.stop()
-            self.settle_timer.stop()
-            self.status_update.emit("Scan paused")
-
-    @pyqtSlot()
-    def resume_scan(self):
-        """Resume the scan"""
-        if self.scan_state == ScanState.PAUSED:
-            self.scan_state = ScanState.SCANNING
-            if self.scan_params.mode == ScanMode.STEP_STOP:
-                self.execute_next_movement()
-            else:
-                self.movement_timer.start()
-            self.status_update.emit("Scan resumed")
-
-    @pyqtSlot()
-    def stop_scan(self):
-        """Stop the scan"""
-        self.scan_state = ScanState.STOPPING
-        self.movement_timer.stop()
-        self.step_timer.stop()
-        self.init_timer.stop()  # Also stop initialization timer
-        self.settle_timer.stop()
-        self._detector_lag_timer.stop()
-        self._in_detector_lag = False
-        self._initializing_scan = False  # Reset initialization state
-
-        # Send stop commands
-        self.movement_command.emit("STOP/X")
-        self.movement_command.emit("STOP/Y")
-
-        self.complete_scan()
-
-    def complete_scan(self):
-        """Complete the scan"""
-        self.scan_state = ScanState.IDLE
-        self.movement_timer.stop()
-        self.step_timer.stop()
-
-        # Clear pixel indices in reconstructor
-        if self.image_reconstructor:
-            self.image_reconstructor.clear_current_pixel()
-
-        self.scan_completed.emit()
-        self.status_update.emit("Scan completed")
-
+# ==========================================
+# 3.2 Gui settings
+# ==========================================
 class ScanControlWidget(QWidget):
     """Widget for scan parameter control"""
 
@@ -6259,53 +6345,6 @@ class RZSeriesDisplayWidget(QWidget):
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to save: {e}")
 
-class HDF5WriterThread(QThread):
-    """Background thread for non-blocking HDF5 writes"""
-
-    error_occurred = pyqtSignal(str)
-
-    def __init__(self, data_storage, max_queue_size=50):
-        super().__init__()
-        self.data_storage = data_storage
-        self.write_queue = queue.Queue(maxsize=max_queue_size)
-        self._stop_requested = False
-
-    def run(self):
-        """Worker thread main loop"""
-        while not self._stop_requested:
-            try:
-                # Wait for write request (with timeout to check stop flag)
-                filepath, data_batch = self.write_queue.get(timeout=0.1)
-            except queue.Empty:
-                continue
-
-            try:
-                # Do the actual HDF5 write (off the main thread)
-                self.data_storage.save_raw_data_batch(filepath, data_batch)
-            except Exception as e:
-                self.error_occurred.emit(f"HDF5 write error: {e}")
-            finally:
-                self.write_queue.task_done()
-
-    @pyqtSlot(str, list)
-    def enqueue_write(self, filepath: str, data_batch: list):
-        """Queue a batch for writing (non-blocking)"""
-        try:
-            # Try to add to queue without blocking
-            self.write_queue.put_nowait((filepath, list(data_batch)))
-        except queue.Full:
-            # Handle backpressure: drop oldest, add new
-            try:
-                self.write_queue.get_nowait()
-                self.write_queue.task_done()
-                self.write_queue.put_nowait((filepath, list(data_batch)))
-            except:
-                pass  # If still can't add, just drop it
-
-    def stop(self):
-        """Request thread to stop"""
-        self._stop_requested = True
-        self.wait(2000)  # Wait up to 2 seconds for thread to finish
 
 def _index_from_pos(x, x0, x1, n):
     """Convert position to pixel index, handling any scan direction"""
@@ -6316,6 +6355,9 @@ def _index_from_pos(x, x0, x1, n):
     xi = int(round(t * (n - 1)))
     return int(np.clip(xi, 0, n - 1))
 
+# ==========================================
+# 3.2 Pop up image viewer
+# ==========================================
 
 class DataFileReader:
     """Read and parse scan data files (HDF5, CSV, NPZ)"""
@@ -6660,7 +6702,6 @@ class DataFileReader:
             result['error'] = f'Error reading NPZ: {str(e)}'
 
         return result
-
 
 class UnifiedImageViewer(QMainWindow):
     """Unified viewer for all scan types with file browsing"""
@@ -7802,7 +7843,9 @@ class UnifiedImageViewer(QMainWindow):
 
             self.status_label.setText(f"Exported to {os.path.basename(filepath)}")
 
-
+# ==========================================
+# 3.3 Gui windows and add-on apps
+# ==========================================
 class ImageRegistrationWindow(QMainWindow):
     """Window for analyzing spatial drift between multiple 2D scan images"""
 
@@ -11369,6 +11412,10 @@ class ScanningMicroscopeApp(QApplication):
 
         self.setPalette(palette)
 
+
+# ==========================================
+# 4. Execute
+# ==========================================
 def main():
     """Main entry point"""
     # Enable high DPI support
