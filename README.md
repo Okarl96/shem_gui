@@ -72,7 +72,7 @@ Restart the powershell after installing.
 ### 2. Run the sandbox simulator
 
 ```bash
-uv run  ecc_pico_simulator.py --images img_z0.png img_z250.png img_z500.png img_z750.png img_z1000.png --z-positions 0 250 500 750 1000 --broker localhost --port 1883 --pos-rate 100 --sig-rate 100 --fov-x 1280 --fov-y 960 --speed-xy 1000 --speed-z 1000 --sample-center-x 0 --sample-center-y 0
+uv run  ecc_pico_simulator.py --images img_z0.png img_z250.png img_z500.png img_z750.png img_z1000.png --z-positions 0 250 500 750 1000 --broker localhost --port 1883 --pos-rate 100 --sig-rate 500 --fov-x 1280 --fov-y 960 --speed-xy 10000 --speed-z 10000 --sample-center-x 0 --sample-center-y 0
 ```
 
 You will see packages downloading and installing. Then there will be messages showing successful loading of images and parameters.
