@@ -38,14 +38,14 @@ Virtual stage Configuration
    - configurable MQTT client settings
    - configurable speed and global coordinates for the sample movement
 
-Detials of how to configure the sandbox is provided below; there will a paper result reproduction short-cut right after this section.
+Detials of how to configure the sandbox is provided below; there will a reproduction short-cut right after this section.
 
 **control script** works on:
 
 Scan parameters
   - User needs to specify scan type, size, resolution, and dwell time for the scan.
 
-Detials of the GUI is provided below; there will a paper result reproduction short-cut right after this section.
+Detials of the GUI is provided below; there will a reproduction short-cut right after this section.
 
 ### Outputs
 **sandbox simulation** outputs:
@@ -85,6 +85,9 @@ You will see packages downloading and installing. Then there will be messages sh
 You will see packages downloading and installing. Then there will be a GUI pops out.
 
 <img width="1919" height="1049" alt="easy step 1" src="https://github.com/user-attachments/assets/4cf27116-26a0-4eff-9a0c-16494310f67f" />
+
+<img width="1918" height="1041" alt="easy step 2" src="https://github.com/user-attachments/assets/d5e9c3c8-5417-44fa-b4b0-1c6b6dbb1a14" />
+
 
 This example reproduces the **sandbox validation workflow described in the paper**.
 
