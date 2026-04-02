@@ -55,6 +55,39 @@ Detials of the GUI is provided below; there will a paper result reproduction sho
   - 2D scan data or line scan data based on the user choice
   - All scan will be stored in PNG for easy access, HDF5 for raw data processing, CSV for simple post-processing
 
+## Minimal Reproducible Example
+
+### 1. Install dependencies
+
+Both scripts have uv(https://docs.astral.sh/uv/) commands embeded which state the required package and will automatiacally install upon running. 
+
+To install the uv in Windows:
+
+```bash
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+Restart the powershell after installing.
+
+### 2. Run the sandbox simulator
+
+```bash
+uv run  ecc_pico_simulator.py --images img_z0.png img_z250.png img_z500.png img_z750.png img_z1000.png --z-positions 0 250 500 750 1000 --broker localhost --port 1883 --pos-rate 100 --sig-rate 100 --fov-x 1280 --fov-y 960 --speed-xy 1000 --speed-z 1000 --sample-center-x 0 --sample-center-y 0
+```
+
+You will see packages downloading and installing. Then there will be messages showing successful loading of images and parameters.
+
+### 2. Run the control GUI
+
+```bash
+ uv run scanner.py
+```
+You will see packages downloading and installing. Then there will be a GUI pops out.
+
+<img width="1919" height="1049" alt="easy step 1" src="https://github.com/user-attachments/assets/4cf27116-26a0-4eff-9a0c-16494310f67f" />
+
+This example reproduces the **sandbox validation workflow described in the paper**.
+
 # 1. Simulator: 
 By its name, it is a simulation code that outputs position and signal stream in the exact format as real SHeM. It helps you to develop the scanning code without accidentally breaking the real instrument. It interpolates JPG images as the "sample" and mimics almost all behaviors we have met in real experiments, including moving the sample in XYZ, rotating the sample around a stated center of rotation, and applying drifts in linear axes,etc. You can find a full description below. 
 
