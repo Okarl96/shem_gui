@@ -94,6 +94,24 @@ After the scan finish or manually clicking the "stop", there will be an image vi
 
 As you can see from the figure, the control GUI has scanned over the input digital image and produced a "crude" version of it since we are using step=40. In this example, we have verified the MQTT connection, the user interface response for the basic 2D control and 2D image live display, the scan parameter settings and scan logic, and data points forming and storage. This example reproduces the **sandbox validation workflow described in the paper**. To exactly reproduce the figure in the paper, we need to reduce the step to 10 or lower for a fine scan which will take much longer than this example. Experimental SHeM data shown in the paper requires physical instrument access and is not included.
 
+## Control Script Structure
+
+<img width="1815" height="841" alt="structure" src="https://github.com/user-attachments/assets/834edcea-f5c8-4784-8521-7df3e2f3bce0" />
+
+The figure above illustrates the internal architecture of the control script. While the system handles multiple complex tasks, from low-level hardware communication to high-level image reconstruction, it is designed with a strict logical separation of concerns.
+
+The architecture is divided into four primary functional blocks:
+
+  - Hardware Status and Communication: acquire positions and signals streaming in the MQTT client and also check the status of the hardware
+  - Scan Control: The orchestration layer that takes user inputs as scanning parameters and then generates trajectories, verifies positions, and handles dwell times for various scan types. It also stores and outputs position and signal data acquired during valid dwell window.
+  - User Interface (GUI): Captures user inputs for easy access, displays live results for monitoring during real experiments, provides image viewer after a complete scan for quick review.
+  - The Execution Function: as needed for all Python applications
+
+You will notice that this entire architecture is distributed as a single Python script. This is an intentional design choice aimed at maximizing ease of deployment in laboratory environments. Setting up custom package management, linking multiple physical files, and configuring virtual environments can be a significant barrier to entry for experimental physicists who are not specialized software engineers. By consolidating the control system into one file, we prioritize rapid deployment and the immediate production of scientific results.
+
+Note on Maintainability: while this single-file approach drastically lowers the barrier to entry and successfully drives the experimental hardware, it represents a trade-off. Consolidating the codebase introduces technical debt, making long-term maintenance and automated type-checking more difficult. However, by strictly adhering to the logical modularity outlined above (heavily commented and physically grouped within the script), the codebase remains conceptually organized, allowing users and AI assistants to navigate and modify distinct functional blocks effectively.
+
+
 # 1. Simulator: 
 By its name, it is a simulation code that outputs position and signal stream in the exact format as real SHeM. It helps you to develop the scanning code without accidentally breaking the real instrument. It interpolates JPG images as the "sample" and mimics almost all behaviors we have met in real experiments, including moving the sample in XYZ, rotating the sample around a stated center of rotation, and applying drifts in linear axes,etc. You can find a full description below. 
 
