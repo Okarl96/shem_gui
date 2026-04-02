@@ -31,7 +31,7 @@ The repository includes:
 **sandbox simulation** works on:
 
 Synthetic sample configuration
-   - PNG/JPEG image used as a virtual sample surface in the sandbox simulation
+   - PNG/JPEG image used as a virtual sample surface in the sandbox simulation (there are some example images already in the folder to run the minimal example below)
    - configurable position and size of the synthetic sample
 
 Virtual stage Configuration
