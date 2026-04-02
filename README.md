@@ -59,6 +59,14 @@ Detials of the GUI is provided below; there will a reproduction short-cut right 
 
 ### 1. Install dependencies
 
+This project is coded using  **Python 3.11**.
+
+Install all dependencies via pip:
+
+```bash
+pip install -r requirements.txt
+```
+
 Both scripts have uv(https://docs.astral.sh/uv/) commands embeded which state the required package, will create a virtual environment, and automatiacally install packages upon running. 
 
 To install the uv in Windows:
@@ -75,6 +83,12 @@ Restart the powershell after installing.
 uv run  ecc_pico_simulator.py --images img_z0.png img_z250.png img_z500.png img_z750.png img_z1000.png --z-positions 0 250 500 750 1000 --broker localhost --port 1883 --pos-rate 100 --sig-rate 500 --fov-x 1280 --fov-y 960 --speed-xy 10000 --speed-z 10000 --sample-center-x 0 --sample-center-y 0
 ```
 
+If not using uv:
+
+```bash
+python ecc_pico_simulator.py --images img_z0.png img_z250.png img_z500.png img_z750.png img_z1000.png --z-positions 0 250 500 750 1000 --broker localhost --port 1883 --pos-rate 100 --sig-rate 500 --fov-x 1280 --fov-y 960 --speed-xy 10000 --speed-z 10000 --sample-center-x 0 --sample-center-y 0
+```
+
 You will see packages downloading and installing. Then there will be messages showing successful loading of images and parameters.
 
 ### 2. Run the control GUI
@@ -82,6 +96,13 @@ You will see packages downloading and installing. Then there will be messages sh
 ```bash
  uv run scanner.py
 ```
+
+If not using uv:
+
+```bash
+python scanner.py
+```
+
 You will see packages downloading and installing. Then there will be a GUI pops out.
 
 <img width="1919" height="1049" alt="easy step 1" src="https://github.com/user-attachments/assets/4cf27116-26a0-4eff-9a0c-16494310f67f" />
