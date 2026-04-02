@@ -59,7 +59,7 @@ Detials of the GUI is provided below; there will a reproduction short-cut right 
 
 ### 1. Install dependencies
 
-Both scripts have uv(https://docs.astral.sh/uv/) commands embeded which state the required package and will automatiacally install upon running. 
+Both scripts have uv(https://docs.astral.sh/uv/) commands embeded which state the required package, will create a virtual environment, and automatiacally install packages upon running. 
 
 To install the uv in Windows:
 
@@ -88,8 +88,11 @@ You will see packages downloading and installing. Then there will be a GUI pops 
 
 <img width="1918" height="1041" alt="easy step 2" src="https://github.com/user-attachments/assets/d5e9c3c8-5417-44fa-b4b0-1c6b6dbb1a14" />
 
+After the scan finish or manually clicking the "stop", there will be an image viewer pops out.
 
-This example reproduces the **sandbox validation workflow described in the paper**.
+<img width="1317" height="592" alt="easy step 3" src="https://github.com/user-attachments/assets/109a05bb-a48a-4807-a917-f6b271861880" />
+
+As you can see from the figure, the control GUI has scanned over the input digital image and produced a "crude" version of it since we are using step=40. In this example, we have verified the MQTT connection, the user interface response for the basic 2D control and 2D image live display, the scan parameter settings and scan logic, and data points forming and storage. This example reproduces the **sandbox validation workflow described in the paper**. To exactly reproduce the figure in the paper, we need to reduce the step to 10 or lower for a fine scan which will take much longer than this example. Experimental SHeM data shown in the paper requires physical instrument access and is not included.
 
 # 1. Simulator: 
 By its name, it is a simulation code that outputs position and signal stream in the exact format as real SHeM. It helps you to develop the scanning code without accidentally breaking the real instrument. It interpolates JPG images as the "sample" and mimics almost all behaviors we have met in real experiments, including moving the sample in XYZ, rotating the sample around a stated center of rotation, and applying drifts in linear axes,etc. You can find a full description below. 
