@@ -1,6 +1,59 @@
-# Scanning Helium Microscope (SHeM) Controlling Script
+# AI-Assisted Control System for Scanning Helium Microscopy (SHeM)
 
-This repository contains a sandbox simulator for mimicing the behaviour of the nanopositioner and picoammeter in real SHeM (https://doi.org/10.1016/j.nimb.2014.06.028) and a controlling script which sends commands and acquire data with user specified parameters. There is no AI training involved in this work. The code is co-developed with commericially available AI models. 
+This repository contains the software framework described in:
+AI-designed and AI-implemented Control Systems for Bespoke Scientific Instrumentation: Application to Scanning Microscopy
+It provides a control system for a Scanning Helium Microscope (SHeM)(https://doi.org/10.1016/j.nimb.2014.06.028), along with a sandbox simulation environment used for validation prior to deployment on physical hardware.
+
+## Scope and Clarification
+This project **does not implement or train any machine learning models**.
+
+- No model training, fine-tuning, or datasets are used.
+- Large Language Models (LLMs) were used **only during development** as external tools for code generation.
+- All code in this repository runs deterministically and locally.
+
+This repository therefore supports AI-assisted software engineering, not AI inference or training.
+
+## Repository Contents
+The repository includes:
+
+**Sandbox simulation environment**
+  - Emulates instrument behaviour using synthetic input data
+  - Allows validation of control logic without hardware access
+
+**Control system script**
+  - Communication layer (MQTT-based messaging)
+  - Scan control logic (trajectory generation, dwell control, position verification)
+  - User interfaces
+
+## Inputs and Outputs
+### Inputs
+
+**sandbox simulation** works on:
+
+Synthetic sample configuration
+   - PNG/JPEG image used as a virtual sample surface in the sandbox simulation
+   - configurable position and size of the synthetic sample
+
+Virtual stage Configuration
+   - configurable MQTT client settings
+   - configurable speed and global coordinates for the sample movement
+
+Detials of how to configure the sandbox is provided below; there will a paper result reproduction short-cut right after this section.
+
+**control script** works on:
+
+Scan parameters
+  - User needs to specify scan type, size, resolution, and dwell time for the scan.
+
+Detials of the GUI is provided below; there will a paper result reproduction short-cut right after this section.
+
+### Outputs
+**sandbox simulation** outputs:
+  - Time-stamped data streams via MQTT client which is subscribed by the control script GUI or by manual subscription
+
+**control scripT** GUI outputs:
+  - 2D scan data or line scan data based on the user choice
+  - All scan will be stored in PNG for easy access, HDF5 for raw data processing, CSV for simple post-processing
 
 # 1. Simulator: 
 By its name, it is a simulation code that outputs position and signal stream in the exact format as real SHeM. It helps you to develop the scanning code without accidentally breaking the real instrument. It interpolates JPG images as the "sample" and mimics almost all behaviors we have met in real experiments, including moving the sample in XYZ, rotating the sample around a stated center of rotation, and applying drifts in linear axes,etc. You can find a full description below. 
