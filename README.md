@@ -132,16 +132,11 @@ You will notice that this entire architecture is distributed as a single Python 
 
 Note on Maintainability: while this single-file approach drastically lowers the barrier to entry and successfully drives the experimental hardware, it represents a trade-off. Consolidating the codebase introduces technical debt, making long-term maintenance and automated type-checking more difficult. However, by strictly adhering to the logical modularity outlined above (heavily commented and physically grouped within the script), the codebase remains conceptually organized, allowing users and AI assistants to navigate and modify distinct functional blocks effectively.
 
-
-# 1. Simulator: 
-By its name, it is a simulation code that outputs position and signal stream in the exact format as real SHeM. It helps you to develop the scanning code without accidentally breaking the real instrument. It interpolates JPG images as the "sample" and mimics almost all behaviors we have met in real experiments, including moving the sample in XYZ, rotating the sample around a stated center of rotation, and applying drifts in linear axes,etc. You can find a full description below. 
-
-# 2. Control Script: 
-The controlling code that is co-developed with AI models and currently been used in the real microscope to conduct experiments. It communicates with hardware through MQTT client, sends moving commands
-
 ----------------------------------
 
-# Simulator
+# Details of the sandbox simulation and control script
+
+## Sandbox
 
 **Coordinate System**
 
@@ -239,7 +234,7 @@ Another way to check the simulator is running is to manually subscribe to the MQ
 
 where you will see a streaming of timestamp/X/Y/Z/R, all positions will be 0 for now if you are using default settings. You can keep the subscribtion and see changes of positions if you send commands by manually post command messages or using the control script.
 
-## Command Line Arguments
+### Command Line Arguments
 
 ***Image Configuration***
 - `--images IMAGE [IMAGE ...]` - Image file paths (PNG, JPEG, etc.)
@@ -272,7 +267,7 @@ where you will see a streaming of timestamp/X/Y/Z/R, all positions will be 0 for
 - `--pos-rate HZ` - Position broadcast rate in Hz (default: 100)
 - `--sig-rate HZ` - Signal broadcast rate in Hz (default: 100)
 
-## MQTT Topics
+### MQTT Topics
 
 **Published Topics:**
 
@@ -344,11 +339,11 @@ Press `Ctrl+C` to gracefully stop the simulator.
 
 ----------------------------------
 
-# Control Script
+## Control Script
 
 A Python-based control system for automated scanning microscopy with real-time data acquisition, visualization, and analysis. The system supports 2D raster scanning, 1D line scans, Z-series scanning, and multi-dimensional scan sequences.
 
-## Overview
+### Overview
 
 This project provides a comprehensive scanning microscope control system that:
 - Controls stage movement via MQTT protocol
@@ -358,7 +353,7 @@ This project provides a comprehensive scanning microscope control system that:
 - Stores data in SQLite, HDF5, and CSV formats
 - Includes live visualization and post-processing tools
 
-## Installation
+### Installation
 
 ```bash
 pip install numpy matplotlib PyQt5 pyqtgraph paho-mqtt h5py scipy scikit-image
@@ -371,7 +366,7 @@ python scanner.py
 Upon successful running, you will see:
 <img width="1920" height="1037" alt="image" src="https://github.com/user-attachments/assets/aeed642d-4333-4149-81df-109e4a991d91" />
 
-## Usage ##
+### Usage ##
 
 **Region 1:** The connection and storage setting, you can simply click `Connect` to start the connection to the MQTT client if using the default setting. The `Path` is the file saving path, and the `Detector Lag` is used in the real microscope to compensate the detetcor sensitivity which is usually 0.35 seconds. Upon successful connection, all N/A numbers in ***Region 3*** will become the current live reading of positions and signal like this:
 <img width="549" height="159" alt="image" src="https://github.com/user-attachments/assets/3d4c68c7-fb72-4dd0-990c-10ca380c934c" />
