@@ -91,7 +91,7 @@ python ecc_pico_simulator.py --images img_z0.png img_z250.png img_z500.png img_z
 
 You will see packages downloading and installing. Then there will be messages showing successful loading of images and parameters.
 
-### 2. Run the control GUI
+### 3. Run the control GUI
 
 ```bash
  uv run scanner.py
