@@ -115,7 +115,7 @@ You will see packages downloading and installing. Then there will be a GUI pops 
 
 <img width="1919" height="1049" alt="easy step 1" src="https://github.com/user-attachments/assets/4cf27116-26a0-4eff-9a0c-16494310f67f" />
 
-<img width="1918" height="1041" alt="easy step 2" src="https://github.com/user-attachments/assets/d5e9c3c8-5417-44fa-b4b0-1c6b6dbb1a14" />
+<img width="2728" height="1494" alt="Screenshot 2026-05-03 031826" src="https://github.com/user-attachments/assets/f4bb6860-6d6b-4445-8012-4166d3f79737" />
 
 After the scan finish or manually clicking the "stop", there will be an image viewer pops out.
 
