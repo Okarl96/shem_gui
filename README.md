@@ -67,6 +67,12 @@ Install all dependencies via pip:
 pip install -r requirements.txt
 ```
 
+If you have uv(see below) already installed:
+
+```bash
+uv add -r requirements.txt
+```
+
 Both scripts have uv(https://docs.astral.sh/uv/) commands embeded which state the required package, will create a virtual environment, and automatiacally install packages upon running. 
 
 To install the uv in Windows:
