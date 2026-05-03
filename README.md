@@ -85,6 +85,8 @@ Restart the powershell after installing.
 
 ### 2. Run the sandbox simulator
 
+To run the sandbox simulator python script and control GUI you either need to change into the respective directories first, or the command should specify the full relative path from the repo directory.
+
 ```bash
 uv run  ecc_pico_simulator.py --images img_z0.png img_z250.png img_z500.png img_z750.png img_z1000.png --z-positions 0 250 500 750 1000 --broker localhost --port 1883 --pos-rate 100 --sig-rate 500 --fov-x 1280 --fov-y 960 --speed-xy 10000 --speed-z 10000 --sample-center-x 0 --sample-center-y 0
 ```
